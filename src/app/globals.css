@@ -1,0 +1,104 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #07090f;
+  --surface: #0d1117;
+  --border: #1a2130;
+  --border2: #243040;
+  --accent: #3b82f6;
+  --accent-glow: rgba(59, 130, 246, 0.15);
+  --yield: #22d3ee;
+  --hot: #f59e0b;
+  --danger: #ef4444;
+  --text: #e2e8f0;
+  --text-dim: #64748b;
+  --text-muted: #334155;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  background: #0d1117;
+  color: #e5e7eb;
+  font-family: 'DM Sans', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+@keyframes spin { to { transform: rotate(360deg) } }
+@keyframes rowIn { from { opacity: 0; transform: translateY(3px) } to { opacity: 1; transform: translateY(0) } }
+
+.bond-row {
+  animation: rowIn 0.2s ease forwards;
+  opacity: 0;
+}
+
+/* Subtle grid background */
+body {
+  background-image:
+    linear-gradient(rgba(59,130,246,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(59,130,246,0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* Filter button */
+.filter-btn {
+  padding: 4px 12px;
+  font-size: 11px;
+  font-family: 'DM Mono', monospace;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  border-radius: 3px;
+  border: 1px solid var(--border2);
+  color: var(--text-dim);
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.filter-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.filter-btn.active {
+  background: var(--accent-glow);
+  border-color: var(--accent);
+  color: #93c5fd;
+}
+
+/* Live indicator */
+@keyframes livePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.live-dot {
+  animation: livePulse 2s infinite;
+}
+
+/* Row fade in */
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.bond-row {
+  animation: rowIn 0.25s ease forwards;
+  opacity: 0;
+}
+
+/* APY glow */
+.apy-value {
+  text-shadow: 0 0 12px rgba(34, 211, 238, 0.4);
+}
