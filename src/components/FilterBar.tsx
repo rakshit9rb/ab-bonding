@@ -15,18 +15,34 @@ interface Props {
 
 const TIME_OPTS: { value: TimeFilter; label: string }[] = [
   { value: 'all', label: 'All' },
-  { value: 'hours', label: '≤24h' },
+  { value: 'hours', label: '24h' },
   { value: 'today', label: 'Today' },
-  { value: 'week', label: 'This Week' },
-  { value: 'month', label: 'This Month' },
+  { value: 'week', label: 'Week' },
+  { value: 'month', label: 'Month' },
 ]
 
 const SORT_OPTS: { value: SortKey; label: string }[] = [
-  { value: 'apy', label: 'APY ↓' },
-  { value: 'prob', label: 'Prob ↓' },
+  { value: 'apy', label: 'APY' },
+  { value: 'prob', label: 'Probability' },
   { value: 'expiry', label: 'Expiry' },
   { value: 'volume', label: 'Volume' },
 ]
+
+function SegmentButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="px-3 py-1.5 rounded-md text-[13px] font-medium transition-all cursor-pointer"
+      style={{
+        background: active ? 'var(--accent-subtle)' : 'transparent',
+        color: active ? 'var(--accent)' : 'var(--text-secondary)',
+        border: 'none',
+      }}
+    >
+      {label}
+    </button>
+  )
+}
 
 export default function FilterBar({
   timeFilter, setTimeFilter,
@@ -35,68 +51,46 @@ export default function FilterBar({
   categories, onRefresh, loading,
 }: Props) {
   return (
-    <div className="border-b border-[var(--border)] bg-[var(--surface)]/60 backdrop-blur-sm sticky top-[57px] z-10">
+    <div className="backdrop-blur-sm sticky top-14 z-10" style={{ background: 'color-mix(in srgb, var(--surface) 90%, transparent)', borderBottom: '1px solid var(--border)' }}>
       <div className="flex items-center gap-3 px-6 py-2.5 flex-wrap">
 
         {/* Time */}
-        <div className="flex items-center gap-1.5">
-          <span className="text-[9px] font-mono tracking-widest text-[var(--text-muted)] uppercase mr-1">Expires</span>
+        <div className="flex items-center gap-0.5 rounded-lg p-0.5" style={{ background: 'var(--surface-secondary)' }}>
           {TIME_OPTS.map((o) => (
-            <button
-              key={o.value}
-              className={`filter-btn ${timeFilter === o.value ? 'active' : ''}`}
-              onClick={() => setTimeFilter(o.value)}
-            >
-              {o.label}
-            </button>
+            <SegmentButton key={o.value} label={o.label} active={timeFilter === o.value} onClick={() => setTimeFilter(o.value)} />
           ))}
         </div>
 
-        <div className="w-px h-5 bg-[var(--border)]" />
+        <div className="w-px h-5" style={{ background: 'var(--border)' }} />
 
         {/* Category */}
-        <div className="flex items-center gap-1.5 overflow-x-auto max-w-[400px]">
-          <span className="text-[9px] font-mono tracking-widest text-[var(--text-muted)] uppercase mr-1 shrink-0">Category</span>
-          <button
-            className={`filter-btn ${catFilter === 'all' ? 'active' : ''}`}
-            onClick={() => setCatFilter('all')}
-          >
-            All
-          </button>
+        <div className="flex items-center gap-0.5 overflow-x-auto">
+          <SegmentButton label="All" active={catFilter === 'all'} onClick={() => setCatFilter('all')} />
           {categories.map((cat) => (
-            <button
-              key={cat}
-              className={`filter-btn ${catFilter === cat ? 'active' : ''}`}
-              onClick={() => setCatFilter(cat)}
-            >
-              {cat}
-            </button>
+            <SegmentButton key={cat} label={cat} active={catFilter === cat} onClick={() => setCatFilter(cat)} />
           ))}
         </div>
 
-        <div className="w-px h-5 bg-[var(--border)]" />
+        <div className="w-px h-5" style={{ background: 'var(--border)' }} />
 
         {/* Sort */}
-        <div className="flex items-center gap-1.5">
-          <span className="text-[9px] font-mono tracking-widest text-[var(--text-muted)] uppercase mr-1">Sort</span>
-          {SORT_OPTS.map((o) => (
-            <button
-              key={o.value}
-              className={`filter-btn ${sort === o.value ? 'active' : ''}`}
-              onClick={() => setSort(o.value)}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
+        <select
+          value={sort}
+          onChange={e => setSort(e.target.value as SortKey)}
+          className="text-[13px] font-medium rounded-lg px-3 py-1.5 outline-none font-sans"
+          style={{ border: '1px solid var(--border)', background: 'var(--surface-secondary)', color: 'var(--text-secondary)', cursor: 'pointer' }}
+        >
+          {SORT_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
 
         {/* Refresh */}
         <button
           onClick={onRefresh}
           disabled={loading}
-          className="ml-auto text-[10px] font-mono text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors border border-[var(--border)] hover:border-[var(--accent)] px-3 py-1.5 rounded-sm"
+          className="ml-auto text-[13px] font-medium px-3 py-1.5 rounded-lg transition-colors"
+          style={{ border: '1px solid var(--border)', color: 'var(--text-secondary)', cursor: 'pointer', background: 'transparent' }}
         >
-          {loading ? '↻ Loading…' : '↻ Refresh'}
+          {loading ? '\u21BB Loading\u2026' : '\u21BB Refresh'}
         </button>
       </div>
     </div>
