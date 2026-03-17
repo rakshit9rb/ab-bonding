@@ -1,7 +1,16 @@
 'use client'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Bond, TimeFilter, SortKey, applyFilters, getCategories, fmtAPY, fmtVolume } from '@/lib/bonds'
 import BondRow from './BondRow'
+
+const TIME_OPTS: { value: TimeFilter; label: string }[] = [
+  { value: 'all', label: 'All' }, { value: 'hours', label: '24h' },
+  { value: 'today', label: 'Today' }, { value: 'week', label: 'Week' }, { value: 'month', label: 'Month' },
+]
+const SORT_OPTS = [
+  { value: 'apy', label: 'APY' }, { value: 'prob', label: 'Probability' },
+  { value: 'expiry', label: 'Expiry' }, { value: 'volume', label: 'Volume' },
+]
 
 function FilterLink({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
@@ -49,15 +58,21 @@ function ThemeToggle() {
       style={{ background: 'none', border: 'none', padding: 0, color: 'var(--text-tertiary)' }}
       aria-label="Toggle theme"
     >
-      {dark ? 'Light' : 'Dark'}
+      {dark ? (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      ) : (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      )}
     </button>
   )
 }
 
-export default function Dashboard() {
-  const [allBonds, setAllBonds] = useState<Bond[]>([])
-  const [fetchedAt, setFetchedAt] = useState('')
-  const [loading, setLoading] = useState(true)
+interface DashboardProps { initialBonds?: Bond[] }
+
+export default function Dashboard({ initialBonds }: DashboardProps) {
+  const [allBonds, setAllBonds] = useState<Bond[]>(initialBonds ?? [])
+  const [fetchedAt, setFetchedAt] = useState(() => initialBonds?.length ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '')
+  const [loading, setLoading] = useState(!initialBonds?.length)
   const [error, setError] = useState<string | null>(null)
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all')
   const [catFilter, setCatFilter] = useState('all')
@@ -98,21 +113,18 @@ export default function Dashboard() {
   useEffect(() => { load(); const id = setInterval(load, 60000); return () => clearInterval(id) }, [load])
   useEffect(() => { loadDisputes(); const id = setInterval(loadDisputes, 60000); return () => clearInterval(id) }, [loadDisputes])
 
-  const categories = getCategories(allBonds)
-  const displayed = applyFilters(allBonds, timeFilter, catFilter, sort)
-  const apys = allBonds.map(b => b.apy).filter((a): a is number => a !== null && a < 9999)
-  const avgAPY = apys.length ? apys.reduce((a, b) => a + b, 0) / apys.length : null
-  const bestAPY = apys.length ? Math.max(...apys) : null
-  const todayCount = allBonds.filter(b => new Date(b.endDate).toDateString() === new Date().toDateString()).length
+  const categories = useMemo(() => getCategories(allBonds), [allBonds])
+  const displayed = useMemo(() => applyFilters(allBonds, timeFilter, catFilter, sort), [allBonds, timeFilter, catFilter, sort])
 
-  const TIME_OPTS: { value: TimeFilter; label: string }[] = [
-    { value: 'all', label: 'All' }, { value: 'hours', label: '24h' },
-    { value: 'today', label: 'Today' }, { value: 'week', label: 'Week' }, { value: 'month', label: 'Month' },
-  ]
-  const SORT_OPTS = [
-    { value: 'apy', label: 'APY' }, { value: 'prob', label: 'Probability' },
-    { value: 'expiry', label: 'Expiry' }, { value: 'volume', label: 'Volume' },
-  ]
+  const { avgAPY, bestAPY, todayCount } = useMemo(() => {
+    let sum = 0, count = 0, best = 0, today = 0
+    const todayStr = new Date().toDateString()
+    for (const b of allBonds) {
+      if (b.apy != null && b.apy < 9999) { sum += b.apy; count++; if (b.apy > best) best = b.apy }
+      if (new Date(b.endDate).toDateString() === todayStr) today++
+    }
+    return { avgAPY: count ? sum / count : null, bestAPY: count ? best : null, todayCount: today }
+  }, [allBonds])
 
   const stats = showDisputes ? [
     { label: 'Disputed',       value: disputes.length,       color: 'var(--text)' },
@@ -120,10 +132,10 @@ export default function Dashboard() {
     { label: 'Best APY',       value: fmtAPY(disputes.map(b => b.apy).filter((a): a is number => a !== null && a < 9999).reduce((a,b) => Math.max(a,b), 0) || null), color: 'var(--green)' },
     { label: 'Expiring Today', value: disputes.filter(b => new Date(b.endDate).toDateString() === new Date().toDateString()).length, color: 'var(--text)' },
   ] : [
-    { label: 'Markets',        value: loading ? '\u2014' : allBonds.length, color: 'var(--text)' },
-    { label: 'Avg APY',        value: loading ? '\u2014' : fmtAPY(avgAPY),  color: 'var(--green)' },
-    { label: 'Best APY',       value: loading ? '\u2014' : fmtAPY(bestAPY), color: 'var(--green)' },
-    { label: 'Expiring Today', value: loading ? '\u2014' : todayCount,      color: 'var(--text)' },
+    { label: 'Markets',        value: allBonds.length, color: 'var(--text)' },
+    { label: 'Avg APY',        value: fmtAPY(avgAPY),  color: 'var(--green)' },
+    { label: 'Best APY',       value: fmtAPY(bestAPY), color: 'var(--green)' },
+    { label: 'Expiring Today', value: todayCount,      color: 'var(--text)' },
   ]
 
   return (
@@ -166,12 +178,21 @@ export default function Dashboard() {
 
         {/* Stats */}
         <div className="grid grid-cols-2 gap-x-8 gap-y-4 md:flex md:gap-16 mb-8 md:mb-16">
-          {stats.map(s => (
-            <div key={s.label}>
-              <div className="text-[24px] md:text-[36px] font-bold leading-none tracking-[-0.03em] font-mono mb-1" style={{ color: s.color }}>{s.value}</div>
-              <div className="text-[13px] md:text-[14px]" style={{ color: 'var(--text-tertiary)' }}>{s.label}</div>
-            </div>
-          ))}
+          {loading ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i}>
+                <div className="skeleton mb-1" style={{ width: 64 + i * 12, height: 28 }} />
+                <div className="skeleton" style={{ width: 80, height: 14 }} />
+              </div>
+            ))
+          ) : (
+            stats.map(s => (
+              <div key={s.label}>
+                <div className="text-[24px] md:text-[36px] font-bold leading-none tracking-[-0.03em] font-mono mb-1" style={{ color: s.color }}>{s.value}</div>
+                <div className="text-[13px] md:text-[14px]" style={{ color: 'var(--text-tertiary)' }}>{s.label}</div>
+              </div>
+            ))
+          )}
         </div>
 
         {/* Threshold + Time */}
@@ -182,7 +203,14 @@ export default function Dashboard() {
           <span className="mx-1" style={{ color: 'var(--text-tertiary)', opacity: 0.3 }}>|</span>
           {TIME_OPTS.map(o => <FilterLink key={o.value} label={o.label} active={timeFilter === o.value} onClick={() => setTimeFilter(o.value)} />)}
           <div className="ml-auto">
-            <FilterLink label={`Disputed${disputes.length > 0 ? ` (${disputes.length})` : ''}`} active={showDisputes} onClick={() => setShowDisputes(v => !v)} />
+            <button
+              onClick={() => setShowDisputes(v => !v)}
+              className="flex items-center gap-1.5 text-[14px] md:text-[15px] cursor-pointer transition-colors whitespace-nowrap"
+              style={{ background: 'none', border: 'none', padding: 0, color: showDisputes ? 'var(--text)' : 'var(--text-tertiary)', fontWeight: showDisputes ? 600 : 400, textDecoration: showDisputes ? 'underline' : 'none', textUnderlineOffset: '4px', textDecorationThickness: '2px' }}
+            >
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: 'var(--red)' }} />
+              Disputed{disputes.length > 0 ? ` (${disputes.length})` : ''}
+            </button>
           </div>
         </div>
 
@@ -210,15 +238,37 @@ export default function Dashboard() {
 
             {/* Column headers — desktop only */}
             {!loading && displayed.length > 0 && (
-              <div className="hidden md:grid py-3 text-[13px] font-semibold uppercase tracking-[0.06em]" style={{ gridTemplateColumns: '24px 1fr 110px 100px 120px 90px 90px 80px', color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)' }}>
-                <div></div><div>Market</div><div>Prob</div><div>APY</div><div>Expires</div><div className="text-right">Vol</div><div className="text-right">Liq</div><div></div>
+              <div className="hidden md:grid py-3 text-[13px] font-semibold uppercase tracking-[0.06em]" style={{ gridTemplateColumns: '24px 1fr 110px 100px 120px 90px 90px', color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)' }}>
+                <div></div><div>Market</div><div>Prob</div><div>APY</div><div>Expires</div><div className="text-right">Vol</div><div className="text-right">Liq</div>
               </div>
             )}
 
-            {/* Loading */}
+            {/* Loading skeletons */}
             {loading && (
-              <div className="flex items-center justify-center h-48 md:h-64">
-                <span className="text-[16px] md:text-[18px] font-semibold" style={{ color: 'var(--text-tertiary)' }}>Loading{'\u2026'}</span>
+              <div>
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="py-4 md:grid md:items-center"
+                    style={{ gridTemplateColumns: '24px 1fr 110px 100px 120px 90px 90px', borderBottom: '1px solid var(--border)', animationDelay: `${i * 0.05}s` }}
+                  >
+                    <div className="hidden md:block skeleton" style={{ width: 16, height: 16 }} />
+                    <div className="flex items-center gap-2 mb-2 md:mb-0 md:pr-8">
+                      <div className="md:hidden skeleton" style={{ width: 14, height: 14, flexShrink: 0 }} />
+                      <div className="skeleton" style={{ width: `${55 + (i % 4) * 10}%`, height: 16 }} />
+                    </div>
+                    <div className="flex items-center gap-4 md:hidden pl-7">
+                      <div className="skeleton" style={{ width: 48, height: 14 }} />
+                      <div className="skeleton" style={{ width: 56, height: 14 }} />
+                      <div className="skeleton" style={{ width: 44, height: 14 }} />
+                    </div>
+                    <div className="hidden md:block skeleton" style={{ width: 56, height: 16 }} />
+                    <div className="hidden md:block skeleton" style={{ width: 64, height: 16 }} />
+                    <div className="hidden md:block skeleton" style={{ width: 72, height: 16 }} />
+                    <div className="hidden md:flex justify-end"><div className="skeleton" style={{ width: 52, height: 16 }} /></div>
+                    <div className="hidden md:flex justify-end"><div className="skeleton" style={{ width: 52, height: 16 }} /></div>
+                  </div>
+                ))}
               </div>
             )}
 
@@ -272,8 +322,8 @@ export default function Dashboard() {
               </div>
             </div>
             {disputes.length > 0 && (
-              <div className="hidden md:grid py-3 text-[13px] font-semibold uppercase tracking-[0.06em]" style={{ gridTemplateColumns: '24px 1fr 110px 100px 120px 90px 90px 80px', color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)' }}>
-                <div></div><div>Market</div><div>Prob</div><div>APY</div><div>Expires</div><div className="text-right">Vol</div><div className="text-right">Liq</div><div></div>
+              <div className="hidden md:grid py-3 text-[13px] font-semibold uppercase tracking-[0.06em]" style={{ gridTemplateColumns: '24px 1fr 110px 100px 120px 90px 90px', color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)' }}>
+                <div></div><div>Market</div><div>Prob</div><div>APY</div><div>Expires</div><div className="text-right">Vol</div><div className="text-right">Liq</div>
               </div>
             )}
             {disputes.length === 0 && (
