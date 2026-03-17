@@ -185,16 +185,30 @@ export async function fetchBonds(minProb = 0.95): Promise<Bond[]> {
 }
 
 // ── Client-side helpers ────────────────────────────────────────────────────
+export function splitPinned(bonds: Bond[], pinnedMatches: string[]): { pinned: Bond[]; regular: Bond[] } {
+  const pinned: Bond[] = []
+  const regular: Bond[] = []
+  for (const b of bonds) {
+    const title = b.question.toLowerCase()
+    if (pinnedMatches.some(m => title.includes(m.toLowerCase()))) pinned.push(b)
+    else regular.push(b)
+  }
+  return { pinned, regular }
+}
+
 export function applyFilters(
   bonds: Bond[],
   timeFilter: TimeFilter,
   catFilter: string,
-  sort: SortKey
+  sort: SortKey,
+  excludedCats: Set<string> = new Set(),
+  sortAsc = false
 ): Bond[] {
   const now = new Date()
 
   let filtered = bonds.filter((b) => {
     if (catFilter !== 'all' && b.category !== catFilter) return false
+    if (excludedCats.size > 0 && excludedCats.has(b.category)) return false
     if (timeFilter === 'all') return true
     const end = new Date(b.endDate)
     const hours = (end.getTime() - now.getTime()) / 3600000
@@ -206,11 +220,12 @@ export function applyFilters(
     return true
   })
 
+  const dir = sortAsc ? 1 : -1
   filtered.sort((a, b) => {
-    if (sort === 'apy') return (b.apy ?? 0) - (a.apy ?? 0)
-    if (sort === 'prob') return b.price - a.price
-    if (sort === 'expiry') return new Date(a.endDate).getTime() - new Date(b.endDate).getTime()
-    if (sort === 'volume') return b.volume - a.volume
+    if (sort === 'apy') return dir * ((a.apy ?? 0) - (b.apy ?? 0))
+    if (sort === 'prob') return dir * (a.price - b.price)
+    if (sort === 'expiry') return dir * (new Date(a.endDate).getTime() - new Date(b.endDate).getTime())
+    if (sort === 'volume') return dir * (a.volume - b.volume)
     return 0
   })
 

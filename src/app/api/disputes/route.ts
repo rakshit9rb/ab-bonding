@@ -64,6 +64,7 @@ export async function GET() {
 
         const price = parsePrice(m)
         const endDate = String(m.endDate || m.endDateIso || '')
+        if (endDate && !endDate.startsWith('2026-12-31') && new Date(endDate) <= now) continue
 
         const slug = String(
           (Array.isArray(m.events) && (m.events as any[]).length > 0

@@ -2,9 +2,9 @@
 import { memo } from 'react'
 import { Bond, fmtAPY, fmtVolume, fmtExpiry } from '@/lib/bonds'
 
-interface Props { bond: Bond; index: number; compact?: boolean }
+interface Props { bond: Bond; index: number; compact?: boolean; pinned?: boolean }
 
-export default memo(function BondRow({ bond, index, compact }: Props) {
+export default memo(function BondRow({ bond, index, pinned }: Props) {
   const { label, urgency } = fmtExpiry(bond.endDate)
   const probPct = (bond.price * 100).toFixed(1)
   const expColor = 'var(--text-secondary)'
@@ -35,18 +35,19 @@ export default memo(function BondRow({ bond, index, compact }: Props) {
         <div className="text-[15px] font-medium truncate leading-snug" style={{ color: 'var(--text)' }}>
           {bond.question}
         </div>
+        {pinned && <span className="hidden md:inline flex-shrink-0 text-[11px] font-semibold tracking-wide" style={{ color: 'var(--purple)' }}>* featured</span>}
       </div>
 
       {/* Mobile: compact row with key values */}
       <div className="flex items-center gap-4 md:hidden pl-7">
-        <span className="text-[14px] font-bold tabular-nums" style={{ color: 'var(--purple)' }}>{probPct}%</span>
+        <span className="text-[14px] font-bold tabular-nums" style={{ color: 'var(--green)' }}>{probPct}%</span>
         <span className="text-[14px] font-bold tabular-nums" style={{ color: apyColor }}>{fmtAPY(bond.apy)}</span>
         <span className="text-[13px]" style={{ color: expColor }}>{label}</span>
       </div>
 
       {/* Desktop-only columns */}
       <div className="hidden md:flex items-center">
-        <span className="text-[15px] font-bold tabular-nums" style={{ color: 'var(--purple)' }}>{probPct}%</span>
+        <span className="text-[15px] font-bold tabular-nums" style={{ color: 'var(--green)' }}>{probPct}%</span>
       </div>
 
       <div className="hidden md:flex items-center">

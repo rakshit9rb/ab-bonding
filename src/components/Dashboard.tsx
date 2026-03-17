@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { Bond, TimeFilter, SortKey, applyFilters, getCategories, fmtAPY, fmtVolume } from '@/lib/bonds'
+import { Bond, TimeFilter, SortKey, applyFilters, splitPinned, getCategories, fmtAPY, fmtVolume } from '@/lib/bonds'
+import { PINNED_MARKETS } from '@/lib/constants'
 import BondRow from './BondRow'
 
 const TIME_OPTS: { value: TimeFilter; label: string }[] = [
@@ -77,6 +78,10 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all')
   const [catFilter, setCatFilter] = useState('all')
   const [sort, setSort] = useState<SortKey>('apy')
+  const [sortAsc, setSortAsc] = useState(false)
+  const [excludedCats, setExcludedCats] = useState<Set<string>>(new Set())
+  const [showFilter, setShowFilter] = useState(false)
+  const filterRef = useRef<HTMLDivElement>(null)
   const [minProb, setMinProb] = useState(0.95)
   const [disputes, setDisputes] = useState<Bond[]>([])
   const [showDisputes, setShowDisputes] = useState(false)
@@ -112,9 +117,17 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
 
   useEffect(() => { load(); const id = setInterval(load, 60000); return () => clearInterval(id) }, [load])
   useEffect(() => { loadDisputes(); const id = setInterval(loadDisputes, 60000); return () => clearInterval(id) }, [loadDisputes])
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (filterRef.current && !filterRef.current.contains(e.target as Node)) setShowFilter(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
   const categories = useMemo(() => getCategories(allBonds), [allBonds])
-  const displayed = useMemo(() => applyFilters(allBonds, timeFilter, catFilter, sort), [allBonds, timeFilter, catFilter, sort])
+  const displayed = useMemo(() => applyFilters(allBonds, timeFilter, catFilter, sort, excludedCats, sortAsc), [allBonds, timeFilter, catFilter, sort, excludedCats, sortAsc])
+  const { pinned: pinnedRows, regular: regularRows } = useMemo(() => splitPinned(displayed, PINNED_MARKETS), [displayed])
 
   const { avgAPY, bestAPY, todayCount } = useMemo(() => {
     let sum = 0, count = 0, best = 0, today = 0
@@ -226,20 +239,48 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
                 <FilterLink label="All" active={catFilter === 'all' && !showDisputes} onClick={() => { setCatFilter('all'); setShowDisputes(false) }} />
                 {categories.map(c => <FilterLink key={c} label={c} active={catFilter === c && !showDisputes} onClick={() => { setCatFilter(c); setShowDisputes(false) }} />)}
               </div>
-              <select
-                value={sort}
-                onChange={e => setSort(e.target.value as SortKey)}
-                className="ml-auto shrink-0 text-[14px] md:text-[15px] font-medium cursor-pointer outline-none font-sans"
-                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', appearance: 'auto' }}
-              >
-                {SORT_OPTS.map(o => <option key={o.value} value={o.value}>Sort: {o.label}</option>)}
-              </select>
+              <div className="relative shrink-0 ml-auto" ref={filterRef}>
+                <button
+                  onClick={() => setShowFilter(v => !v)}
+                  className="cursor-pointer transition-colors flex items-center gap-1"
+                  style={{ background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', fontSize: '14px', fontWeight: 500, color: excludedCats.size > 0 ? 'var(--text)' : 'var(--text-tertiary)' }}
+                >
+                  Filter{excludedCats.size > 0 ? ` (${excludedCats.size})` : ''} <span style={{ fontSize: '11px', opacity: 0.7 }}>▾</span>
+                </button>
+                {showFilter && (
+                  <div className="absolute right-0 top-7 z-50 rounded-xl py-2 min-w-[160px]" style={{ background: 'var(--bg)', border: '1px solid var(--border)', boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}>
+                    <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Exclude categories</div>
+                    {categories.map(c => (
+                      <button
+                        key={c}
+                        onClick={() => setExcludedCats(prev => { const next = new Set(prev); next.has(c) ? next.delete(c) : next.add(c); return next })}
+                        className="w-full text-left px-3 py-1.5 text-[14px] cursor-pointer flex items-center gap-2"
+                        style={{ background: 'none', border: 'none', fontFamily: 'inherit', color: excludedCats.has(c) ? 'var(--red)' : 'var(--text-secondary)' }}
+                      >
+                        <span style={{ opacity: excludedCats.has(c) ? 1 : 0 }}>✕</span>{c}
+                      </button>
+                    ))}
+                    {excludedCats.size > 0 && (
+                      <button onClick={() => setExcludedCats(new Set())} className="w-full text-left px-3 pt-2 pb-1 text-[12px] cursor-pointer" style={{ background: 'none', border: 'none', borderTop: '1px solid var(--border)', fontFamily: 'inherit', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                        Clear all
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Column headers — desktop only */}
             {!loading && displayed.length > 0 && (
               <div className="hidden md:grid py-3 text-[13px] font-semibold uppercase tracking-[0.06em]" style={{ gridTemplateColumns: '24px 1fr 110px 100px 120px 90px 90px', color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)' }}>
-                <div></div><div>Market</div><div>Prob</div><div>APY</div><div>Expires</div><div className="text-right">Vol</div><div className="text-right">Liq</div>
+                <div></div><div>Market</div>
+                {(['prob','apy','expiry'] as const).map((key, i) => (
+                  <button key={key} onClick={() => { if (sort === key) setSortAsc(v => !v); else { setSort(key); setSortAsc(false) } }} className="text-left cursor-pointer flex items-center gap-1" style={{ background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', letterSpacing: 'inherit', textTransform: 'inherit', color: sort === key ? 'var(--text)' : 'var(--text-tertiary)' }}>
+                    {['Odds','APY','Expires'][i]}
+                    <span style={{ fontSize: '10px', opacity: sort === key ? 1 : 0.3 }}>{sort === key ? (sortAsc ? '↑' : '↓') : '↓'}</span>
+                  </button>
+                ))}
+                <div className="text-right">Vol</div><div className="text-right">Liq</div>
               </div>
             )}
 
@@ -289,7 +330,10 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
             )}
 
             {/* Rows */}
-            {!loading && !error && displayed.map((bond, i) => <BondRow key={bond.id} bond={bond} index={i} />)}
+            {!loading && !error && (<>
+              {pinnedRows.map((bond, i) => <BondRow key={bond.id} bond={bond} index={i} pinned />)}
+              {regularRows.map((bond, i) => <BondRow key={bond.id} bond={bond} index={pinnedRows.length + i} />)}
+            </>)}
 
             {/* Footer */}
             {!loading && !error && displayed.length > 0 && (
@@ -323,7 +367,14 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
             </div>
             {disputes.length > 0 && (
               <div className="hidden md:grid py-3 text-[13px] font-semibold uppercase tracking-[0.06em]" style={{ gridTemplateColumns: '24px 1fr 110px 100px 120px 90px 90px', color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)' }}>
-                <div></div><div>Market</div><div>Prob</div><div>APY</div><div>Expires</div><div className="text-right">Vol</div><div className="text-right">Liq</div>
+                <div></div><div>Market</div>
+                {(['prob','apy','expiry'] as const).map((key, i) => (
+                  <button key={key} onClick={() => { if (sort === key) setSortAsc(v => !v); else { setSort(key); setSortAsc(false) } }} className="text-left cursor-pointer flex items-center gap-1" style={{ background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', letterSpacing: 'inherit', textTransform: 'inherit', color: sort === key ? 'var(--text)' : 'var(--text-tertiary)' }}>
+                    {['Odds','APY','Expires'][i]}
+                    <span style={{ fontSize: '10px', opacity: sort === key ? 1 : 0.3 }}>{sort === key ? (sortAsc ? '↑' : '↓') : '↓'}</span>
+                  </button>
+                ))}
+                <div className="text-right">Vol</div><div className="text-right">Liq</div>
               </div>
             )}
             {disputes.length === 0 && (
