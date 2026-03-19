@@ -11,7 +11,8 @@ export interface Bond {
 }
 
 export type TimeFilter = 'all' | 'hours' | 'today' | 'week' | 'month'
-export type SortKey = 'apy' | 'prob' | 'expiry' | 'volume'
+export type SortKey = 'apy' | 'prob' | 'expiry' | 'volume' | 'liquidity'
+export type TimeLeft = 'any' | '1h' | '6h' | '12h' | '24h' | '7d'
 
 const GAMMA = 'https://gamma-api.polymarket.com'
 
@@ -83,7 +84,7 @@ function getCategory(m: Record<string, unknown>): string {
 }
 
 function getVolume(m: Record<string, unknown>): number {
-  for (const key of ['volume24hr', 'volumeNum', 'volumeClob', 'volume']) {
+  for (const key of ['volumeNum', 'volumeClob', 'volume', 'volume24hr']) {
     if (m[key] != null) {
       const v = parseFloat(m[key] as string)
       if (!isNaN(v)) return v
@@ -160,14 +161,17 @@ export async function fetchBonds(minProb = 0.95): Promise<Bond[]> {
 
   const now = new Date()
   const bonds: Bond[] = []
+  // tokenId → index in bonds array (for CLOB enrichment)
+  const tokenIdToIdx = new Map<string, number>()
 
   for (const m of raw) {
     const price = parsePrice(m)
-    if (price == null || price < minProb) continue
+    if (price == null || price < minProb || price >= 0.9995) continue
     const endDate = parseEndDate(m)
     if (!endDate) continue
     if (new Date(endDate) <= now) continue
 
+    const idx = bonds.length
     bonds.push({
       id: String(m.conditionId || m.id || Math.random()),
       question: String(m.question || m.title || 'Unknown'),
@@ -177,8 +181,47 @@ export async function fetchBonds(minProb = 0.95): Promise<Bond[]> {
       apy: calcAPY(price, endDate),
       endDate,
       volume: getVolume(m),
-      liquidity: getLiquidity(m),
+      liquidity: getLiquidity(m), // Gamma fallback, replaced below if CLOB succeeds
     })
+
+    // Extract YES token ID (index 0) for CLOB order book lookup
+    try {
+      const raw_ids = m.clobTokenIds
+      const ids: string[] = typeof raw_ids === 'string' ? JSON.parse(raw_ids) : (raw_ids as string[]) ?? []
+      if (ids[0]) tokenIdToIdx.set(ids[0], idx)
+    } catch {}
+  }
+
+  // Enrich liquidity from CLOB order book (YES ask-side depth)
+  // liquidity = Σ(ask.size × ask.price) — total $ of YES shares available to buy
+  if (tokenIdToIdx.size > 0) {
+    const CLOB = 'https://clob.polymarket.com'
+    const tokenIds = Array.from(tokenIdToIdx.keys())
+    const clobResults = await Promise.allSettled(
+      tokenIds.map((id) =>
+        fetch(`${CLOB}/book?token_id=${id}`, {
+          headers: { 'User-Agent': 'OnlyBonds/1.0' },
+          signal: AbortSignal.timeout(8000),
+          next: { revalidate: 60 },
+        } as RequestInit).then((r) => (r.ok ? r.json() : null))
+      )
+    )
+
+    for (let i = 0; i < tokenIds.length; i++) {
+      const result = clobResults[i]
+      if (result.status !== 'fulfilled' || !result.value) continue
+      const book = result.value
+      const asks: { price: string; size: string }[] = Array.isArray(book.asks) ? book.asks : []
+      const liquidity = asks.reduce((sum, ask) => {
+        const p = parseFloat(ask.price)
+        const s = parseFloat(ask.size)
+        return isNaN(p) || isNaN(s) ? sum : sum + p * s
+      }, 0)
+      if (liquidity > 0) {
+        const idx = tokenIdToIdx.get(tokenIds[i])!
+        bonds[idx].liquidity = liquidity
+      }
+    }
   }
 
   return bonds
@@ -200,19 +243,29 @@ export function applyFilters(
   bonds: Bond[],
   timeFilter: TimeFilter,
   catFilter: string,
+  catModes: Map<string, 'include' | 'exclude'>,
   sort: SortKey,
-  excludedCats: Set<string> = new Set(),
+  minLiquidity = 0,
+  timeLeft: TimeLeft = 'any',
   sortAsc = false
 ): Bond[] {
   const now = new Date()
+  const includedCats = Array.from(catModes.entries()).filter(([, v]) => v === 'include').map(([k]) => k)
+  const excludedCats = Array.from(catModes.entries()).filter(([, v]) => v === 'exclude').map(([k]) => k)
+  const timeLeftHours: Record<string, number> = { '1h': 1, '6h': 6, '12h': 12, '24h': 24, '7d': 168 }
 
   let filtered = bonds.filter((b) => {
     if (catFilter !== 'all' && b.category !== catFilter) return false
-    if (excludedCats.size > 0 && excludedCats.has(b.category)) return false
-    if (timeFilter === 'all') return true
+    if (includedCats.length > 0 && !includedCats.includes(b.category)) return false
+    if (excludedCats.includes(b.category)) return false
+    if (minLiquidity > 0 && b.liquidity < minLiquidity) return false
     const end = new Date(b.endDate)
     const hours = (end.getTime() - now.getTime()) / 3600000
-    const days = (end.getTime() - now.getTime()) / 86400000
+    const days = hours / 24
+    if (timeLeft !== 'any') {
+      if (hours < 0 || hours > timeLeftHours[timeLeft]) return false
+    }
+    if (timeFilter === 'all') return true
     if (timeFilter === 'hours') return hours >= 0 && hours <= 24
     if (timeFilter === 'today') return end.toDateString() === now.toDateString()
     if (timeFilter === 'week') return days >= 0 && days <= 7
@@ -226,6 +279,7 @@ export function applyFilters(
     if (sort === 'prob') return dir * (a.price - b.price)
     if (sort === 'expiry') return dir * (new Date(a.endDate).getTime() - new Date(b.endDate).getTime())
     if (sort === 'volume') return dir * (a.volume - b.volume)
+    if (sort === 'liquidity') return dir * (a.liquidity - b.liquidity)
     return 0
   })
 
@@ -256,6 +310,8 @@ export function fmtExpiry(endDateStr: string): { label: string; urgency: 'critic
   const days = Math.floor(hours / 24)
 
   if (hours < 0) return { label: 'Expired', urgency: 'critical' }
+  if (hours < 1 / 60) return { label: '< 1m left', urgency: 'critical' }
+  if (hours < 1) return { label: `${Math.round(hours * 60)}m left`, urgency: 'critical' }
   if (hours < 24) return { label: `${Math.round(hours)}h left`, urgency: 'critical' }
   if (days < 7) return { label: `${Math.round(hours)}h left`, urgency: 'soon' }
   return { label: `${days}d left`, urgency: 'normal' }

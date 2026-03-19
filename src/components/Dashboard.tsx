@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { Bond, TimeFilter, SortKey, applyFilters, splitPinned, getCategories, fmtAPY, fmtVolume } from '@/lib/bonds'
+import { Bond, TimeFilter, SortKey, TimeLeft, applyFilters, splitPinned, getCategories, fmtAPY, fmtVolume } from '@/lib/bonds'
 import { PINNED_MARKETS } from '@/lib/constants'
 import BondRow from './BondRow'
 
@@ -77,9 +77,11 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
   const [error, setError] = useState<string | null>(null)
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all')
   const [catFilter, setCatFilter] = useState('all')
+  const [catModes, setCatModes] = useState<Map<string, 'include' | 'exclude'>>(new Map())
   const [sort, setSort] = useState<SortKey>('apy')
   const [sortAsc, setSortAsc] = useState(false)
-  const [excludedCats, setExcludedCats] = useState<Set<string>>(new Set())
+  const [minLiquidity, setMinLiquidity] = useState(0)
+  const [timeLeft, setTimeLeft] = useState<TimeLeft>('any')
   const [showFilter, setShowFilter] = useState(false)
   const filterRef = useRef<HTMLDivElement>(null)
   const [minProb, setMinProb] = useState(0.95)
@@ -126,15 +128,15 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
   }, [])
 
   const categories = useMemo(() => getCategories(allBonds), [allBonds])
-  const displayed = useMemo(() => applyFilters(allBonds, timeFilter, catFilter, sort, excludedCats, sortAsc), [allBonds, timeFilter, catFilter, sort, excludedCats, sortAsc])
+  const displayed = useMemo(() => applyFilters(allBonds, timeFilter, catFilter, catModes, sort, minLiquidity, timeLeft, sortAsc), [allBonds, timeFilter, catFilter, catModes, sort, minLiquidity, timeLeft, sortAsc])
   const { pinned: pinnedRows, regular: regularRows } = useMemo(() => splitPinned(displayed, PINNED_MARKETS), [displayed])
 
   const { avgAPY, bestAPY, todayCount } = useMemo(() => {
     let sum = 0, count = 0, best = 0, today = 0
-    const todayStr = new Date().toDateString()
+    const todayStr = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD in local time
     for (const b of allBonds) {
       if (b.apy != null && b.apy < 9999) { sum += b.apy; count++; if (b.apy > best) best = b.apy }
-      if (new Date(b.endDate).toDateString() === todayStr) today++
+      if (b.endDate?.slice(0, 10) === todayStr) today++
     }
     return { avgAPY: count ? sum / count : null, bestAPY: count ? best : null, todayCount: today }
   }, [allBonds])
@@ -150,6 +152,9 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
     { label: 'Best APY',       value: fmtAPY(bestAPY), color: 'var(--green)' },
     { label: 'Expiring Today', value: todayCount,      color: 'var(--text)' },
   ]
+
+  const activeFilterCount = catModes.size + (minLiquidity > 0 ? 1 : 0) + (timeLeft !== 'any' ? 1 : 0)
+  const clearAllFilters = () => { setCatModes(new Map()); setTimeLeft('any'); setMinLiquidity(0) }
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
@@ -233,35 +238,109 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
         {/* Main table */}
         {!showDisputes && (
           <div>
-            {/* Categories + Sort */}
-            <div className="flex items-center gap-2 md:gap-3 mb-6 md:mb-8">
-              <div className="flex items-center gap-2 md:gap-3 overflow-x-auto no-scrollbar min-w-0">
-                <FilterLink label="All" active={catFilter === 'all' && !showDisputes} onClick={() => { setCatFilter('all'); setShowDisputes(false) }} />
-                {categories.map(c => <FilterLink key={c} label={c} active={catFilter === c && !showDisputes} onClick={() => { setCatFilter(c); setShowDisputes(false) }} />)}
+            {/* Categories + Filter */}
+            <div className="flex items-center gap-2 md:gap-3 mb-6 md:mb-8" ref={filterRef}>
+              {/* Category pills — simple single-select */}
+              <div className="flex items-center gap-2 md:gap-3 overflow-x-auto no-scrollbar flex-1 min-w-0">
+                <FilterLink label="All" active={catFilter === 'all'} onClick={() => setCatFilter('all')} />
+                {categories.map(c => (
+                  <FilterLink key={c} label={c} active={catFilter === c} onClick={() => setCatFilter(c)} />
+                ))}
               </div>
-              <div className="relative shrink-0 ml-auto" ref={filterRef}>
+
+              {/* Filter dropdown */}
+              <div className="relative shrink-0">
                 <button
                   onClick={() => setShowFilter(v => !v)}
-                  className="cursor-pointer transition-colors flex items-center gap-1"
-                  style={{ background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', fontSize: '14px', fontWeight: 500, color: excludedCats.size > 0 ? 'var(--text)' : 'var(--text-tertiary)' }}
+                  className="flex items-center gap-1 text-[14px] md:text-[15px] cursor-pointer transition-colors"
+                  style={{ background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', color: activeFilterCount > 0 ? 'var(--text)' : 'var(--text-tertiary)', fontWeight: activeFilterCount > 0 ? 600 : 400 }}
                 >
-                  Filter{excludedCats.size > 0 ? ` (${excludedCats.size})` : ''} <span style={{ fontSize: '11px', opacity: 0.7 }}>▾</span>
+                  Filter{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+                  <span style={{ fontSize: '11px', opacity: 0.6 }}>▾</span>
                 </button>
                 {showFilter && (
-                  <div className="absolute right-0 top-7 z-50 rounded-xl py-2 min-w-[160px]" style={{ background: 'var(--bg)', border: '1px solid var(--border)', boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}>
-                    <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Exclude categories</div>
-                    {categories.map(c => (
+                  <div className="absolute right-0 top-8 z-50 rounded-xl p-4 w-[280px]" style={{ background: '#161b22', border: '1px solid #1f2937', boxShadow: '0 16px 40px rgba(0,0,0,0.5)' }}>
+
+                    {/* Category include/exclude */}
+                    <div className="mb-5">
+                      <div className="text-[11px] font-semibold uppercase tracking-wider mb-2.5" style={{ color: '#6b7280' }}>Category</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {categories.map(c => {
+                          const mode = catModes.get(c)
+                          return (
+                            <button
+                              key={c}
+                              onClick={() => setCatModes(prev => {
+                                const next = new Map(prev)
+                                if (!mode) next.set(c, 'include')
+                                else if (mode === 'include') next.set(c, 'exclude')
+                                else next.delete(c)
+                                return next
+                              })}
+                              className="px-2.5 py-1 rounded-md text-[12px] font-medium cursor-pointer transition-all"
+                              style={{
+                                background: mode === 'include' ? 'rgba(5,150,80,0.15)' : mode === 'exclude' ? 'rgba(220,38,38,0.12)' : 'rgba(255,255,255,0.05)',
+                                border: `1px solid ${mode === 'include' ? 'rgba(5,150,80,0.35)' : mode === 'exclude' ? 'rgba(220,38,38,0.3)' : 'rgba(255,255,255,0.08)'}`,
+                                color: mode === 'include' ? '#4ade80' : mode === 'exclude' ? '#f87171' : '#9ca3af',
+                                textDecoration: mode === 'exclude' ? 'line-through' : 'none',
+                              }}
+                            >
+                              {c}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Time Left */}
+                    <div className="mb-5">
+                      <div className="text-[11px] font-semibold uppercase tracking-wider mb-2.5" style={{ color: '#6b7280' }}>Time Left</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {([{v:'any',l:'Any'},{v:'1h',l:'<1h'},{v:'6h',l:'<6h'},{v:'12h',l:'<12h'},{v:'24h',l:'<24h'},{v:'7d',l:'<7d'}] as const).map(o => (
+                          <button
+                            key={o.v}
+                            onClick={() => setTimeLeft(o.v)}
+                            className="px-2.5 py-1 rounded-md text-[12px] font-medium cursor-pointer transition-all"
+                            style={{
+                              background: timeLeft === o.v ? 'rgba(23,94,202,0.2)' : 'rgba(255,255,255,0.05)',
+                              border: `1px solid ${timeLeft === o.v ? 'rgba(23,94,202,0.5)' : 'rgba(255,255,255,0.08)'}`,
+                              color: timeLeft === o.v ? '#60a5fa' : '#9ca3af',
+                            }}
+                          >
+                            {o.l}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Min Liquidity */}
+                    <div className="mb-2">
+                      <div className="text-[11px] font-semibold uppercase tracking-wider mb-2.5" style={{ color: '#6b7280' }}>Min Liquidity</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {([{v:0,l:'Any'},{v:1000,l:'>$1K'},{v:10000,l:'>$10K'},{v:100000,l:'>$100K'}] as const).map(o => (
+                          <button
+                            key={o.v}
+                            onClick={() => setMinLiquidity(o.v)}
+                            className="px-2.5 py-1 rounded-md text-[12px] font-medium cursor-pointer transition-all"
+                            style={{
+                              background: minLiquidity === o.v ? 'rgba(23,94,202,0.2)' : 'rgba(255,255,255,0.05)',
+                              border: `1px solid ${minLiquidity === o.v ? 'rgba(23,94,202,0.5)' : 'rgba(255,255,255,0.08)'}`,
+                              color: minLiquidity === o.v ? '#60a5fa' : '#9ca3af',
+                            }}
+                          >
+                            {o.l}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Clear all */}
+                    {activeFilterCount > 0 && (
                       <button
-                        key={c}
-                        onClick={() => setExcludedCats(prev => { const next = new Set(prev); next.has(c) ? next.delete(c) : next.add(c); return next })}
-                        className="w-full text-left px-3 py-1.5 text-[14px] cursor-pointer flex items-center gap-2"
-                        style={{ background: 'none', border: 'none', fontFamily: 'inherit', color: excludedCats.has(c) ? 'var(--red)' : 'var(--text-secondary)' }}
+                        onClick={clearAllFilters}
+                        className="w-full text-left text-[12px] cursor-pointer mt-3 pt-3"
+                        style={{ background: 'none', border: 'none', borderTop: '1px solid #1f2937', color: '#6b7280', fontFamily: 'inherit' }}
                       >
-                        <span style={{ opacity: excludedCats.has(c) ? 1 : 0 }}>✕</span>{c}
-                      </button>
-                    ))}
-                    {excludedCats.size > 0 && (
-                      <button onClick={() => setExcludedCats(new Set())} className="w-full text-left px-3 pt-2 pb-1 text-[12px] cursor-pointer" style={{ background: 'none', border: 'none', borderTop: '1px solid var(--border)', fontFamily: 'inherit', color: 'var(--text-tertiary)', marginTop: '4px' }}>
                         Clear all
                       </button>
                     )}
@@ -280,7 +359,12 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
                     <span style={{ fontSize: '10px', opacity: sort === key ? 1 : 0.3 }}>{sort === key ? (sortAsc ? '↑' : '↓') : '↓'}</span>
                   </button>
                 ))}
-                <div className="text-right">Vol</div><div className="text-right">Liq</div>
+                {(['volume','liquidity'] as const).map((key, i) => (
+                  <button key={key} onClick={() => { if (sort === key) setSortAsc(v => !v); else { setSort(key); setSortAsc(false) } }} className="text-right cursor-pointer flex items-center justify-end gap-1" style={{ background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', letterSpacing: 'inherit', textTransform: 'inherit', color: sort === key ? 'var(--text)' : 'var(--text-tertiary)' }}>
+                    {['Vol','Liq'][i]}
+                    <span style={{ fontSize: '10px', opacity: sort === key ? 1 : 0.3 }}>{sort === key ? (sortAsc ? '↑' : '↓') : '↓'}</span>
+                  </button>
+                ))}
               </div>
             )}
 
@@ -374,7 +458,12 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
                     <span style={{ fontSize: '10px', opacity: sort === key ? 1 : 0.3 }}>{sort === key ? (sortAsc ? '↑' : '↓') : '↓'}</span>
                   </button>
                 ))}
-                <div className="text-right">Vol</div><div className="text-right">Liq</div>
+                {(['volume','liquidity'] as const).map((key, i) => (
+                  <button key={key} onClick={() => { if (sort === key) setSortAsc(v => !v); else { setSort(key); setSortAsc(false) } }} className="text-right cursor-pointer flex items-center justify-end gap-1" style={{ background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', letterSpacing: 'inherit', textTransform: 'inherit', color: sort === key ? 'var(--text)' : 'var(--text-tertiary)' }}>
+                    {['Vol','Liq'][i]}
+                    <span style={{ fontSize: '10px', opacity: sort === key ? 1 : 0.3 }}>{sort === key ? (sortAsc ? '↑' : '↓') : '↓'}</span>
+                  </button>
+                ))}
               </div>
             )}
             {disputes.length === 0 && (

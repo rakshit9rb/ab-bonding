@@ -26,6 +26,7 @@ const SORT_OPTS: { value: SortKey; label: string }[] = [
   { value: 'prob', label: 'Probability' },
   { value: 'expiry', label: 'Expiry' },
   { value: 'volume', label: 'Volume' },
+  { value: 'liquidity', label: 'Liquidity' },
 ]
 
 function SegmentButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
