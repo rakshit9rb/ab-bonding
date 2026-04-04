@@ -11,14 +11,8 @@
   --accent-subtle: rgba(23, 94, 202, 0.06);
   --accent-muted: rgba(23, 94, 202, 0.12);
   --green: #059650;
-  --green-dim: #048a49;
-  --green-subtle: rgba(5, 150, 80, 0.08);
-  --amber: #ca8a04;
-  --amber-subtle: rgba(202, 138, 4, 0.06);
   --purple: #6d28d9;
   --red: #dc2626;
-  --red-subtle: rgba(220, 38, 38, 0.06);
-  --grey: #9BAAB9;
   --text: #161616;
   --text-secondary: #4a4a4a;
   --text-tertiary: #8a8a8a;
@@ -36,14 +30,8 @@
   --accent-subtle: rgba(23, 94, 202, 0.1);
   --accent-muted: rgba(23, 94, 202, 0.18);
   --green: #059650;
-  --green-dim: #048a49;
-  --green-subtle: rgba(5, 150, 80, 0.1);
-  --amber: #ca8a04;
-  --amber-subtle: rgba(202, 138, 4, 0.08);
   --purple: #6d28d9;
   --red: #f87171;
-  --red-subtle: rgba(248, 113, 113, 0.08);
-  --grey: #8a8a8a;
   --text: #e8e8ec;
   --text-secondary: #a0a0a8;
   --text-tertiary: #70707a;
@@ -80,12 +68,6 @@ body {
 .no-scrollbar::-webkit-scrollbar { display: none; }
 
 /* Animations */
-@keyframes spin { to { transform: rotate(360deg) } }
-@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(4px) }
-  to { opacity: 1; transform: translateY(0) }
-}
 @keyframes rowIn {
   from { opacity: 0; transform: translateY(2px) }
   to { opacity: 1; transform: translateY(0) }

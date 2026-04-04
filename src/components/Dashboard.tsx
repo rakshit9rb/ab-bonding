@@ -1,16 +1,13 @@
 'use client'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { Bond, TimeFilter, SortKey, TimeLeft, applyFilters, splitPinned, getCategories, fmtAPY, fmtVolume } from '@/lib/bonds'
+import { Bond, TimeFilter, SortKey, TimeLeft, applyFilters, splitPinned, getCategories, fmtAPY } from '@/lib/bonds'
 import { PINNED_MARKETS } from '@/lib/constants'
 import BondRow from './BondRow'
+import MarketTableHeader from './MarketTableHeader'
 
 const TIME_OPTS: { value: TimeFilter; label: string }[] = [
   { value: 'all', label: 'All' }, { value: 'hours', label: '24h' },
   { value: 'today', label: 'Today' }, { value: 'week', label: 'Week' }, { value: 'month', label: 'Month' },
-]
-const SORT_OPTS = [
-  { value: 'apy', label: 'APY' }, { value: 'prob', label: 'Probability' },
-  { value: 'expiry', label: 'Expiry' }, { value: 'volume', label: 'Volume' },
 ]
 
 function FilterLink({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
@@ -155,6 +152,15 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
 
   const activeFilterCount = catModes.size + (minLiquidity > 0 ? 1 : 0) + (timeLeft !== 'any' ? 1 : 0)
   const clearAllFilters = () => { setCatModes(new Map()); setTimeLeft('any'); setMinLiquidity(0) }
+  const handleSortChange = (key: SortKey) => {
+    if (sort === key) {
+      setSortAsc((value) => !value)
+      return
+    }
+
+    setSort(key)
+    setSortAsc(false)
+  }
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
@@ -351,21 +357,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
 
             {/* Column headers — desktop only */}
             {!loading && displayed.length > 0 && (
-              <div className="hidden md:grid py-3 text-[13px] font-semibold uppercase tracking-[0.06em]" style={{ gridTemplateColumns: '24px 1fr 110px 100px 120px 90px 90px', color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)' }}>
-                <div></div><div>Market</div>
-                {(['prob','apy','expiry'] as const).map((key, i) => (
-                  <button key={key} onClick={() => { if (sort === key) setSortAsc(v => !v); else { setSort(key); setSortAsc(false) } }} className="text-left cursor-pointer flex items-center gap-1" style={{ background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', letterSpacing: 'inherit', textTransform: 'inherit', color: sort === key ? 'var(--text)' : 'var(--text-tertiary)' }}>
-                    {['Odds','APY','Expires'][i]}
-                    <span style={{ fontSize: '10px', opacity: sort === key ? 1 : 0.3 }}>{sort === key ? (sortAsc ? '↑' : '↓') : '↓'}</span>
-                  </button>
-                ))}
-                {(['volume','liquidity'] as const).map((key, i) => (
-                  <button key={key} onClick={() => { if (sort === key) setSortAsc(v => !v); else { setSort(key); setSortAsc(false) } }} className="text-right cursor-pointer flex items-center justify-end gap-1" style={{ background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', letterSpacing: 'inherit', textTransform: 'inherit', color: sort === key ? 'var(--text)' : 'var(--text-tertiary)' }}>
-                    {['Vol','Liq'][i]}
-                    <span style={{ fontSize: '10px', opacity: sort === key ? 1 : 0.3 }}>{sort === key ? (sortAsc ? '↑' : '↓') : '↓'}</span>
-                  </button>
-                ))}
-              </div>
+              <MarketTableHeader sort={sort} sortAsc={sortAsc} onSortChange={handleSortChange} />
             )}
 
             {/* Loading skeletons */}
@@ -450,21 +442,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
               </div>
             </div>
             {disputes.length > 0 && (
-              <div className="hidden md:grid py-3 text-[13px] font-semibold uppercase tracking-[0.06em]" style={{ gridTemplateColumns: '24px 1fr 110px 100px 120px 90px 90px', color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)' }}>
-                <div></div><div>Market</div>
-                {(['prob','apy','expiry'] as const).map((key, i) => (
-                  <button key={key} onClick={() => { if (sort === key) setSortAsc(v => !v); else { setSort(key); setSortAsc(false) } }} className="text-left cursor-pointer flex items-center gap-1" style={{ background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', letterSpacing: 'inherit', textTransform: 'inherit', color: sort === key ? 'var(--text)' : 'var(--text-tertiary)' }}>
-                    {['Odds','APY','Expires'][i]}
-                    <span style={{ fontSize: '10px', opacity: sort === key ? 1 : 0.3 }}>{sort === key ? (sortAsc ? '↑' : '↓') : '↓'}</span>
-                  </button>
-                ))}
-                {(['volume','liquidity'] as const).map((key, i) => (
-                  <button key={key} onClick={() => { if (sort === key) setSortAsc(v => !v); else { setSort(key); setSortAsc(false) } }} className="text-right cursor-pointer flex items-center justify-end gap-1" style={{ background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', letterSpacing: 'inherit', textTransform: 'inherit', color: sort === key ? 'var(--text)' : 'var(--text-tertiary)' }}>
-                    {['Vol','Liq'][i]}
-                    <span style={{ fontSize: '10px', opacity: sort === key ? 1 : 0.3 }}>{sort === key ? (sortAsc ? '↑' : '↓') : '↓'}</span>
-                  </button>
-                ))}
-              </div>
+              <MarketTableHeader sort={sort} sortAsc={sortAsc} onSortChange={handleSortChange} />
             )}
             {disputes.length === 0 && (
               <div className="flex items-center justify-center h-40">

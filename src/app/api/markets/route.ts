@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
-import { fetchBonds } from '@/lib/bonds'
+import { fetchBonds, parseMinProbability } from '@/lib/bond-data'
 
-export const revalidate = 60 // ISR every 60s
+export const revalidate = 60
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
-  const minProb = parseFloat(searchParams.get('minProb') ?? '0.95')
+  const minProb = parseMinProbability(searchParams.get('minProb'))
 
   try {
     const bonds = await fetchBonds(minProb)

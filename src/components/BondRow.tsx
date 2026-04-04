@@ -2,10 +2,10 @@
 import { memo } from 'react'
 import { Bond, fmtAPY, fmtVolume, fmtExpiry } from '@/lib/bonds'
 
-interface Props { bond: Bond; index: number; compact?: boolean; pinned?: boolean }
+interface Props { bond: Bond; index: number; pinned?: boolean }
 
 export default memo(function BondRow({ bond, index, pinned }: Props) {
-  const { label, urgency } = fmtExpiry(bond.endDate)
+  const { label } = fmtExpiry(bond.endDate)
   const probPct = (bond.price * 100).toFixed(1)
   const expColor = 'var(--text-secondary)'
   const apyColor = 'var(--green)'
