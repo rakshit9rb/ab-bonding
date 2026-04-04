@@ -5,8 +5,8 @@ Polymarket high-probability bonds dashboard. Shows markets with YES probability 
 ## Setup
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
@@ -19,17 +19,8 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## Filters
 
-| Filter | Options |
-|--------|---------|
-| Expires | All · ≤24h · Today · This Week · This Month |
-| Category | Dynamic from API |
-| Sort | APY · Probability · Expiry · Volume |
-
-## Deploy to Vercel
-
-```bash
-npm install -g vercel
-vercel
-```
-
-One command, zero config needed.
+| Filter   | Options                                     |
+| -------- | ------------------------------------------- |
+| Expires  | All · ≤24h · Today · This Week · This Month |
+| Category | Dynamic from API                            |
+| Sort     | APY · Probability · Expiry · Volume         |
