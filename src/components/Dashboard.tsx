@@ -1,6 +1,6 @@
 "use client";
 import Image from "next/image";
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { startTransition, useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   Bond,
   TimeFilter,
@@ -123,13 +123,14 @@ function ThemeToggle() {
 
 interface DashboardProps {
   initialBonds?: Bond[];
+  initialFetchedAt?: string;
 }
 
-export default function Dashboard({ initialBonds }: DashboardProps) {
+export default function Dashboard({ initialBonds, initialFetchedAt }: DashboardProps) {
   const [allBonds, setAllBonds] = useState<Bond[]>(initialBonds ?? []);
   const [fetchedAt, setFetchedAt] = useState(() =>
-    initialBonds?.length
-      ? new Date().toLocaleTimeString([], {
+    initialFetchedAt
+      ? new Date(initialFetchedAt).toLocaleTimeString([], {
           hour: "2-digit",
           minute: "2-digit",
         })
@@ -162,38 +163,53 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
   const minProbRef = useRef(minProb);
   minProbRef.current = minProb;
 
-  const load = useCallback(async (prob?: number) => {
-    const p = prob ?? minProbRef.current;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/markets?minProb=${p}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setAllBonds(data.bonds ?? []);
-      setFetchedAt(
-        new Date(data.fetchedAt).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-      );
-    } catch {
-      setError("Could not fetch markets.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const load = useCallback(
+    async (prob?: number, options?: { background?: boolean }) => {
+      const p = prob ?? minProbRef.current;
+      const background = options?.background ?? false;
+
+      if (!background) {
+        setLoading(true);
+        setError(null);
+      }
+
+      try {
+        const res = await fetch(`/api/markets?minProb=${p}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        startTransition(() => {
+          setAllBonds(data.bonds ?? []);
+          setFetchedAt(
+            new Date(data.fetchedAt).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+          );
+        });
+        setError(null);
+      } catch {
+        if (!background || !initialBonds?.length) {
+          setError("Could not fetch markets.");
+        }
+      } finally {
+        if (!background) setLoading(false);
+      }
+    },
+    [initialBonds?.length],
+  );
 
   useEffect(() => {
-    load();
+    void load(undefined, { background: Boolean(initialBonds?.length) });
     const id = setInterval(load, 60000);
     return () => clearInterval(id);
-  }, [load]);
+  }, [initialBonds?.length, load]);
+
   useEffect(() => {
-    loadDisputes();
+    if (!showDisputes) return;
+    if (disputes.length === 0) loadDisputes();
     const id = setInterval(loadDisputes, 60000);
     return () => clearInterval(id);
-  }, [loadDisputes]);
+  }, [disputes.length, loadDisputes, showDisputes]);
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (filterRef.current && !filterRef.current.contains(e.target as Node)) setShowFilter(false);

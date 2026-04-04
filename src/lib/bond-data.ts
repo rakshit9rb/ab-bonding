@@ -7,14 +7,22 @@ export const DEFAULT_MIN_PROBABILITY = 0.95;
 
 const GAMMA_API_BASE = "https://gamma-api.polymarket.com";
 const CLOB_API_BASE = "https://clob.polymarket.com";
-const ACTIVE_MARKET_PAGE_COUNT = 5;
+const EVENT_PAGE_SIZE = 50;
 const ACTIVE_MARKET_PAGE_SIZE = 200;
-const ACTIVE_MARKET_SORT_KEYS = ["volume24hr", "liquidity"] as const;
-const DISPUTED_MARKET_SORT_KEYS = ["volume24hr"] as const;
+const MAX_EVENT_PAGE_COUNT = 100;
+const MARKET_DISCOVERY_SORT_KEY = "volume24hr";
+const CLOB_BOOK_BATCH_SIZE = 50;
+const FETCH_WINDOW_SIZE = 8;
 const FIXED_END_DATE_PLACEHOLDER = "2026-12-31";
 const REQUEST_HEADERS = { "User-Agent": "OnlyBonds/1.0" };
 
 type RawMarket = Record<string, unknown>;
+type RawEvent = Record<string, unknown>;
+type RawOrderBook = Record<string, unknown>;
+type MarketUniverseCacheEntry = {
+  expiresAt: number;
+  promise: Promise<RawMarket[]>;
+};
 
 function parseNumber(value: unknown): number | null {
   const parsed = Number.parseFloat(String(value));
@@ -44,6 +52,39 @@ function toMarketList(value: unknown): RawMarket[] {
   }
   return [];
 }
+
+function toEventList(value: unknown): RawEvent[] {
+  if (Array.isArray(value))
+    return value.filter((item): item is RawEvent => typeof item === "object" && item !== null);
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    Array.isArray((value as { events?: unknown }).events)
+  ) {
+    return (value as { events: unknown[] }).events.filter(
+      (item): item is RawEvent => typeof item === "object" && item !== null,
+    );
+  }
+  return [];
+}
+
+function toOrderBookList(value: unknown): RawOrderBook[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is RawOrderBook => typeof item === "object" && item !== null);
+}
+
+function parseBoolean(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const normalised = value.trim().toLowerCase();
+    if (normalised === "true") return true;
+    if (normalised === "false") return false;
+  }
+  return null;
+}
+
+const marketUniverseCache = new Map<string, MarketUniverseCacheEntry>();
 
 function getMarketId(market: RawMarket): string {
   return String(market.conditionId || market.id || "");
@@ -110,7 +151,12 @@ function getVolume(market: RawMarket): number {
 }
 
 function getLiquidity(market: RawMarket): number {
-  return getFirstFiniteNumber(market, ["liquidityNum", "liquidityClob", "liquidity"]);
+  return getFirstFiniteNumber(market, [
+    "liquidityNum",
+    "liquidityClob",
+    "liquidity",
+    "liquidityAmm",
+  ]);
 }
 
 const CATEGORY_RULES: [string, RegExp][] = [
@@ -174,28 +220,72 @@ function getCategory(market: RawMarket): string {
 }
 
 async function fetchJson(url: string, init: RequestInit = {}): Promise<unknown> {
+  const method = init.method?.toUpperCase() ?? "GET";
   const response = await fetch(url, {
     ...init,
     headers: { ...REQUEST_HEADERS, ...init.headers },
-    next: { revalidate: BOND_DATA_REVALIDATE_SECONDS },
-  } as RequestInit & { next: { revalidate: number } });
+    ...(method === "GET" || method === "HEAD"
+      ? { next: { revalidate: BOND_DATA_REVALIDATE_SECONDS } }
+      : {}),
+  });
 
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
 }
 
-function buildMarketUrls(sortKeys: readonly string[]): string[] {
-  const urls: string[] = [];
+function isOpenMarket(market: RawMarket): boolean {
+  return (
+    parseBoolean(market.active) !== false &&
+    parseBoolean(market.closed) !== true &&
+    parseBoolean(market.archived) !== true
+  );
+}
 
-  for (const sortKey of sortKeys) {
-    for (let page = 0; page < ACTIVE_MARKET_PAGE_COUNT; page++) {
-      urls.push(
-        `${GAMMA_API_BASE}/markets?closed=false&archived=false&active=true&limit=${ACTIVE_MARKET_PAGE_SIZE}&offset=${page * ACTIVE_MARKET_PAGE_SIZE}&order=${sortKey}&ascending=false`,
-      );
+function mergeMarketWithEventContext(market: RawMarket, event: RawEvent): RawMarket {
+  return {
+    ...market,
+    ...(market.category ? null : { category: event.category }),
+    ...(market.tags ? null : { tags: event.tags }),
+    ...(market.events || !event.slug ? null : { events: [{ slug: event.slug }] }),
+  };
+}
+
+function getEventMarkets(event: RawEvent): RawMarket[] {
+  const rawMarkets = Array.isArray(event.markets)
+    ? event.markets.filter((item): item is RawMarket => typeof item === "object" && item !== null)
+    : [];
+
+  return rawMarkets
+    .map((market) => mergeMarketWithEventContext(market, event))
+    .filter((market) => isOpenMarket(market));
+}
+
+async function fetchEventMarketUniverse(sortKey: string): Promise<RawMarket[]> {
+  const markets: RawMarket[] = [];
+
+  for (let startPage = 0; startPage < MAX_EVENT_PAGE_COUNT; startPage += FETCH_WINDOW_SIZE) {
+    const pageResults = await Promise.all(
+      Array.from(
+        { length: Math.min(FETCH_WINDOW_SIZE, MAX_EVENT_PAGE_COUNT - startPage) },
+        async (_, offset) => {
+          const page = startPage + offset;
+          const payload = await fetchJson(
+            `${GAMMA_API_BASE}/events?active=true&closed=false&archived=false&limit=${EVENT_PAGE_SIZE}&offset=${page * EVENT_PAGE_SIZE}&order=${sortKey}&ascending=false`,
+          );
+          return toEventList(payload);
+        },
+      ),
+    );
+
+    for (const events of pageResults) {
+      if (events.length === 0) return dedupeMarkets(markets);
+
+      markets.push(...events.flatMap((event) => getEventMarkets(event)));
+      if (events.length < EVENT_PAGE_SIZE) return dedupeMarkets(markets);
     }
   }
 
-  return urls;
+  return dedupeMarkets(markets);
 }
 
 function dedupeMarkets(markets: RawMarket[]): RawMarket[] {
@@ -212,31 +302,95 @@ function dedupeMarkets(markets: RawMarket[]): RawMarket[] {
   return deduped;
 }
 
-async function fetchMarketUniverse(sortKeys: readonly string[]): Promise<RawMarket[]> {
-  const pageResults = await Promise.allSettled(
-    buildMarketUrls(sortKeys).map((url) => fetchJson(url)),
-  );
-  const markets = dedupeMarkets(
-    pageResults.flatMap((result) =>
-      result.status === "fulfilled" ? toMarketList(result.value) : [],
-    ),
-  );
-
-  if (markets.length > 0) return markets;
-
+async function fetchMarketUniverse(sortKey: string): Promise<RawMarket[]> {
   try {
-    const fallback = await fetchJson(
-      `${GAMMA_API_BASE}/markets?closed=false&limit=${ACTIVE_MARKET_PAGE_SIZE}`,
+    const eventMarkets = await fetchEventMarketUniverse(sortKey);
+    if (eventMarkets.length > 0) return eventMarkets;
+  } catch {}
+
+  const markets: RawMarket[] = [];
+
+  for (let startPage = 0; startPage < MAX_EVENT_PAGE_COUNT; startPage += FETCH_WINDOW_SIZE) {
+    const pageResults = await Promise.allSettled(
+      Array.from(
+        { length: Math.min(FETCH_WINDOW_SIZE, MAX_EVENT_PAGE_COUNT - startPage) },
+        async (_, offset) => {
+          const page = startPage + offset;
+          const payload = await fetchJson(
+            `${GAMMA_API_BASE}/markets?closed=false&archived=false&active=true&limit=${ACTIVE_MARKET_PAGE_SIZE}&offset=${page * ACTIVE_MARKET_PAGE_SIZE}&order=${sortKey}&ascending=false`,
+          );
+          return toMarketList(payload).filter((market) => isOpenMarket(market));
+        },
+      ),
     );
-    return dedupeMarkets(toMarketList(fallback));
-  } catch {
-    return [];
+
+    for (const result of pageResults) {
+      if (result.status !== "fulfilled") return dedupeMarkets(markets);
+
+      const pageMarkets = result.value;
+      if (pageMarkets.length === 0) return dedupeMarkets(markets);
+
+      markets.push(...pageMarkets);
+      if (pageMarkets.length < ACTIVE_MARKET_PAGE_SIZE) return dedupeMarkets(markets);
+    }
   }
+
+  return dedupeMarkets(markets);
+}
+
+function getCachedMarketUniverse(sortKey: string): Promise<RawMarket[]> {
+  const now = Date.now();
+  const cached = marketUniverseCache.get(sortKey);
+  if (cached && cached.expiresAt > now) return cached.promise;
+
+  const promise = fetchMarketUniverse(sortKey).catch((error) => {
+    const latest = marketUniverseCache.get(sortKey);
+    if (latest?.promise === promise) marketUniverseCache.delete(sortKey);
+    throw error;
+  });
+
+  marketUniverseCache.set(sortKey, {
+    expiresAt: now + BOND_DATA_REVALIDATE_SECONDS * 1000,
+    promise,
+  });
+
+  return promise;
+}
+
+function getOutcomeLabels(market: RawMarket): string[] {
+  return parseStringArray(market.outcomes);
 }
 
 function getYesTokenId(market: RawMarket): string | null {
   const tokenIds = parseStringArray(market.clobTokenIds);
-  return tokenIds[0] ?? null;
+  const outcomeLabels = getOutcomeLabels(market);
+  const yesOutcomeIndex = outcomeLabels.findIndex((label) => label.trim().toLowerCase() === "yes");
+
+  if (yesOutcomeIndex >= 0 && yesOutcomeIndex < tokenIds.length) return tokenIds[yesOutcomeIndex]!;
+  if (tokenIds.length > 0) return tokenIds[0]!;
+
+  if (!Array.isArray(market.tokens)) return null;
+
+  const yesToken = market.tokens.find((token) => {
+    if (typeof token !== "object" || token === null) return false;
+    return (
+      String((token as { outcome?: unknown }).outcome ?? "")
+        .trim()
+        .toLowerCase() === "yes"
+    );
+  }) as { tokenId?: unknown; clobTokenId?: unknown; id?: unknown } | undefined;
+
+  return String(yesToken?.tokenId || yesToken?.clobTokenId || yesToken?.id || "") || null;
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+
+  return chunks;
 }
 
 async function enrichLiquidityFromClob(bonds: Bond[], tokenIdToIndex: Map<string, number>) {
@@ -244,20 +398,27 @@ async function enrichLiquidityFromClob(bonds: Bond[], tokenIdToIndex: Map<string
 
   const tokenIds = Array.from(tokenIdToIndex.keys());
   const clobResults = await Promise.allSettled(
-    tokenIds.map((tokenId) =>
-      fetchJson(`${CLOB_API_BASE}/book?token_id=${tokenId}`, {
+    chunk(tokenIds, CLOB_BOOK_BATCH_SIZE).map((tokenIdBatch) =>
+      fetchJson(`${CLOB_API_BASE}/books`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(tokenIdBatch.map((tokenId) => ({ token_id: tokenId }))),
+        cache: "no-store",
         signal: AbortSignal.timeout(8000),
       }),
     ),
   );
 
-  for (let index = 0; index < tokenIds.length; index++) {
-    const result = clobResults[index];
-    if (result.status !== "fulfilled" || typeof result.value !== "object" || result.value === null)
-      continue;
+  const orderBooks = clobResults.flatMap((result) =>
+    result.status === "fulfilled" ? toOrderBookList(result.value) : [],
+  );
 
-    const asks = Array.isArray((result.value as { asks?: unknown }).asks)
-      ? (result.value as { asks: Array<{ price?: unknown; size?: unknown }> }).asks
+  for (const orderBook of orderBooks) {
+    const assetId = String(orderBook.asset_id || orderBook.assetId || "");
+    if (!assetId) continue;
+
+    const asks = Array.isArray(orderBook.asks)
+      ? (orderBook.asks as Array<{ price?: unknown; size?: unknown }>)
       : [];
 
     const liquidity = asks.reduce((sum, ask) => {
@@ -268,8 +429,9 @@ async function enrichLiquidityFromClob(bonds: Bond[], tokenIdToIndex: Map<string
 
     if (liquidity <= 0) continue;
 
-    const bondIndex = tokenIdToIndex.get(tokenIds[index]);
-    if (bondIndex != null) bonds[bondIndex].liquidity = liquidity;
+    const bondIndex = tokenIdToIndex.get(assetId);
+    if (bondIndex == null) continue;
+    if (bonds[bondIndex].liquidity <= 0) bonds[bondIndex].liquidity = liquidity;
   }
 }
 
@@ -298,7 +460,7 @@ export function parseMinProbability(value: string | null | undefined): number {
 }
 
 export async function fetchBonds(minProb = DEFAULT_MIN_PROBABILITY): Promise<Bond[]> {
-  const markets = await fetchMarketUniverse(ACTIVE_MARKET_SORT_KEYS);
+  const markets = await getCachedMarketUniverse(MARKET_DISCOVERY_SORT_KEY);
   const bonds: Bond[] = [];
   const tokenIdToIndex = new Map<string, number>();
   const now = new Date();
@@ -311,10 +473,11 @@ export async function fetchBonds(minProb = DEFAULT_MIN_PROBABILITY): Promise<Bon
     if (!isActiveEndDate(endDate, now)) continue;
 
     const bondIndex = bonds.length;
-    bonds.push(toBond(market, getCategory(market), price, endDate));
+    const bond = toBond(market, getCategory(market), price, endDate);
+    bonds.push(bond);
 
     const yesTokenId = getYesTokenId(market);
-    if (yesTokenId) tokenIdToIndex.set(yesTokenId, bondIndex);
+    if (yesTokenId && bond.liquidity <= 0) tokenIdToIndex.set(yesTokenId, bondIndex);
   }
 
   await enrichLiquidityFromClob(bonds, tokenIdToIndex);
@@ -323,7 +486,7 @@ export async function fetchBonds(minProb = DEFAULT_MIN_PROBABILITY): Promise<Bon
 }
 
 export async function fetchDisputedBonds(): Promise<Bond[]> {
-  const markets = await fetchMarketUniverse(DISPUTED_MARKET_SORT_KEYS);
+  const markets = await getCachedMarketUniverse(MARKET_DISCOVERY_SORT_KEY);
   const now = new Date();
 
   return markets.flatMap((market) => {
