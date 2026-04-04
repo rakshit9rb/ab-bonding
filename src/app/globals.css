@@ -1,12 +1,12 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #F2EFDE;
-  --surface: #FAFAF6;
-  --surface-secondary: #ECEADB;
+  --bg: #f2efde;
+  --surface: #fafaf6;
+  --surface-secondary: #eceadb;
   --border: rgba(22, 22, 22, 0.08);
   --border-hover: rgba(22, 22, 22, 0.14);
-  --accent: #175ECA;
+  --accent: #175eca;
   --accent-hover: #1352b3;
   --accent-subtle: rgba(23, 94, 202, 0.06);
   --accent-muted: rgba(23, 94, 202, 0.12);
@@ -25,7 +25,7 @@
   --surface-secondary: #303037;
   --border: rgba(220, 220, 220, 0.08);
   --border-hover: rgba(220, 220, 220, 0.14);
-  --accent: #175ECA;
+  --accent: #175eca;
   --accent-hover: #1352b3;
   --accent-subtle: rgba(23, 94, 202, 0.1);
   --accent-muted: rgba(23, 94, 202, 0.18);
@@ -53,32 +53,64 @@ html {
 body {
   background: var(--bg);
   color: var(--text);
-  font-feature-settings: 'rlig' 1, 'calt' 1;
+  font-feature-settings:
+    "rlig" 1,
+    "calt" 1;
   line-height: 1.5;
 }
 
 /* Scrollbar */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border-hover); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-hover);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
 
 /* Hide horizontal scrollbars on mobile */
-.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
 
 /* Animations */
 @keyframes rowIn {
-  from { opacity: 0; transform: translateY(2px) }
-  to { opacity: 1; transform: translateY(0) }
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 @keyframes livePulse {
-  0%, 100% { opacity: 1 }
-  50% { opacity: 0.3 }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
 }
 @keyframes shimmer {
-  0% { background-position: -400px 0 }
-  100% { background-position: 400px 0 }
+  0% {
+    background-position: -400px 0;
+  }
+  100% {
+    background-position: 400px 0;
+  }
 }
 
 .skeleton {

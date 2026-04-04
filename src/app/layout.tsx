@@ -1,15 +1,27 @@
-import type { Metadata } from 'next'
-import { GeistSans } from 'geist/font/sans'
-import { GeistMono } from 'geist/font/mono'
-import './globals.css'
+import type { Metadata } from "next";
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
+import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
     default: "OnlyBonds — Polymarket High-Probability Markets Dashboard",
-    template: "%s | OnlyBonds"
+    template: "%s | OnlyBonds",
   },
-  description: "Track near-certain Polymarket prediction markets with annualized yield calculations. Find high-probability bonds, compare APY, and discover the best opportunities on Polymarket.",
-  keywords: ["Polymarket", "prediction markets", "high probability", "APY", "bonds", "crypto", "trading", "yield", "market dashboard", "polymarket dashboard"],
+  description:
+    "Track near-certain Polymarket prediction markets with annualized yield calculations. Find high-probability bonds, compare APY, and discover the best opportunities on Polymarket.",
+  keywords: [
+    "Polymarket",
+    "prediction markets",
+    "high probability",
+    "APY",
+    "bonds",
+    "crypto",
+    "trading",
+    "yield",
+    "market dashboard",
+    "polymarket dashboard",
+  ],
   authors: [{ name: "OnlyBonds" }],
   creator: "OnlyBonds",
   publisher: "OnlyBonds",
@@ -20,7 +32,8 @@ export const metadata: Metadata = {
     locale: "en_US",
     siteName: "OnlyBonds",
     title: "OnlyBonds — Polymarket High-Probability Markets Dashboard",
-    description: "Track near-certain Polymarket prediction markets with annualized yield calculations. Find high-probability bonds and discover the best opportunities.",
+    description:
+      "Track near-certain Polymarket prediction markets with annualized yield calculations. Find high-probability bonds and discover the best opportunities.",
     url: "https://onlybonds.fun",
     images: [
       {
@@ -34,7 +47,8 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "OnlyBonds — Polymarket High-Probability Markets Dashboard",
-    description: "Track near-certain Polymarket prediction markets with annualized yield calculations. Find high-probability bonds and discover the best opportunities.",
+    description:
+      "Track near-certain Polymarket prediction markets with annualized yield calculations. Find high-probability bonds and discover the best opportunities.",
     images: ["https://onlybonds.fun/opengraph.png"],
     creator: "@ybhrdwj",
   },
@@ -49,15 +63,23 @@ export const metadata: Metadata = {
       "max-snippet": -1,
     },
   },
-}
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`} suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`${GeistSans.variable} ${GeistMono.variable}`}
+      suppressHydrationWarning
+    >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var d=document.documentElement,t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme:dark)').matches))d.classList.add('dark')}catch(e){}})()` }} />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var d=document.documentElement,t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme:dark)').matches))d.classList.add('dark')}catch(e){}})()`,
+          }}
+        />
       </head>
       <body className="font-sans">{children}</body>
     </html>
-  )
+  );
 }
