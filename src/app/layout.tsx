@@ -60,7 +60,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script async src="https://www.googletagmanager.com/gtag/js?id=G-698PE3G7Q1" />
         <script dangerouslySetInnerHTML={{ __html: `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','G-698PE3G7Q1');` }} />
       </head>
-      <body className="font-sans">{children}</body>
+      <body className="font-sans"><Providers>{children}</Providers></body>
     </html>
   )
 }

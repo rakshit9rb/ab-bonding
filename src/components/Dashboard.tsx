@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { Bond, TimeFilter, SortKey, TimeLeft, applyFilters, splitPinned, getCategories, fmtAPY, fmtVolume } from '@/lib/bonds'
+import { usePrivy } from '@privy-io/react-auth'
+import { Bond, TimeFilter, SortKey, TimeLeft, applyFilters, splitPinned, getCategories, fmtAPY, fmtGain, fmtVolume } from '@/lib/bonds'
 import { PINNED_MARKETS } from '@/lib/constants'
 import BondRow from './BondRow'
 
@@ -70,6 +71,37 @@ function ThemeToggle() {
 
 interface DashboardProps { initialBonds?: Bond[] }
 
+function AuthButton() {
+  const { ready, authenticated, user, login, logout } = usePrivy()
+  if (!ready) return null
+
+  if (authenticated && user) {
+    const label = user.google?.email ?? user.wallet?.address?.slice(0, 6) + '…' + user.wallet?.address?.slice(-4) ?? 'Account'
+    return (
+      <div className="flex items-center gap-3">
+        <span className="hidden md:inline text-[13px]" style={{ color: 'var(--text-secondary)' }}>{label}</span>
+        <button
+          onClick={logout}
+          className="text-[13px] cursor-pointer transition-colors"
+          style={{ background: 'none', border: 'none', padding: 0, color: 'var(--text-tertiary)' }}
+        >
+          Sign out
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <button
+      onClick={login}
+      className="text-[13px] md:text-[14px] font-semibold px-3 py-1.5 rounded-lg cursor-pointer transition-all hover:opacity-90"
+      style={{ background: 'var(--accent)', color: '#fff', border: 'none' }}
+    >
+      Sign in
+    </button>
+  )
+}
+
 export default function Dashboard({ initialBonds }: DashboardProps) {
   const [allBonds, setAllBonds] = useState<Bond[]>(initialBonds ?? [])
   const [fetchedAt, setFetchedAt] = useState(() => initialBonds?.length ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '')
@@ -78,7 +110,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all')
   const [catFilter, setCatFilter] = useState('all')
   const [catModes, setCatModes] = useState<Map<string, 'include' | 'exclude'>>(new Map())
-  const [sort, setSort] = useState<SortKey>('apy')
+  const [sort, setSort] = useState<SortKey>('gain')
   const [sortAsc, setSortAsc] = useState(false)
   const [minLiquidity, setMinLiquidity] = useState(0)
   const [timeLeft, setTimeLeft] = useState<TimeLeft>('any')
@@ -178,6 +210,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
             >
               {loading ? 'Loading\u2026' : 'Refresh'}
             </button>
+            <AuthButton />
           </div>
         </div>
       </nav>
@@ -353,9 +386,9 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
             {!loading && displayed.length > 0 && (
               <div className="hidden md:grid py-3 text-[13px] font-semibold uppercase tracking-[0.06em]" style={{ gridTemplateColumns: '24px 1fr 110px 100px 120px 90px 90px', color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)' }}>
                 <div></div><div>Market</div>
-                {(['prob','apy','expiry'] as const).map((key, i) => (
+                {(['prob','gain','expiry'] as const).map((key, i) => (
                   <button key={key} onClick={() => { if (sort === key) setSortAsc(v => !v); else { setSort(key); setSortAsc(false) } }} className="text-left cursor-pointer flex items-center gap-1" style={{ background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', letterSpacing: 'inherit', textTransform: 'inherit', color: sort === key ? 'var(--text)' : 'var(--text-tertiary)' }}>
-                    {['Odds','APY','Expires'][i]}
+                    {['Odds','Gain','Expires'][i]}
                     <span style={{ fontSize: '10px', opacity: sort === key ? 1 : 0.3 }}>{sort === key ? (sortAsc ? '↑' : '↓') : '↓'}</span>
                   </button>
                 ))}
@@ -452,9 +485,9 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
             {disputes.length > 0 && (
               <div className="hidden md:grid py-3 text-[13px] font-semibold uppercase tracking-[0.06em]" style={{ gridTemplateColumns: '24px 1fr 110px 100px 120px 90px 90px', color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)' }}>
                 <div></div><div>Market</div>
-                {(['prob','apy','expiry'] as const).map((key, i) => (
+                {(['prob','gain','expiry'] as const).map((key, i) => (
                   <button key={key} onClick={() => { if (sort === key) setSortAsc(v => !v); else { setSort(key); setSortAsc(false) } }} className="text-left cursor-pointer flex items-center gap-1" style={{ background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', letterSpacing: 'inherit', textTransform: 'inherit', color: sort === key ? 'var(--text)' : 'var(--text-tertiary)' }}>
-                    {['Odds','APY','Expires'][i]}
+                    {['Odds','Gain','Expires'][i]}
                     <span style={{ fontSize: '10px', opacity: sort === key ? 1 : 0.3 }}>{sort === key ? (sortAsc ? '↑' : '↓') : '↓'}</span>
                   </button>
                 ))}
