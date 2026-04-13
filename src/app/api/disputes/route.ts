@@ -25,7 +25,7 @@ export async function GET() {
     const pageUrls: string[] = []
     for (let page = 0; page < PAGES; page++) {
       pageUrls.push(
-        `${GAMMA}/markets?closed=false&archived=false&active=true&limit=${LIMIT}&offset=${page * LIMIT}&order=volume24hr&ascending=false`
+        `${GAMMA}/markets?closed=false&active=true&limit=${LIMIT}&offset=${page * LIMIT}&order=volume24hr&ascending=false`
       )
     }
 
@@ -55,12 +55,8 @@ export async function GET() {
         if (!id || seen.has(id)) continue
         seen.add(id)
 
-        let statuses: string[] = []
-        try {
-          const raw = m.umaResolutionStatuses
-          statuses = typeof raw === 'string' ? JSON.parse(raw) : (raw as string[]) ?? []
-        } catch {}
-        if (!statuses.length || statuses[statuses.length - 1] !== 'disputed') continue
+        if (m.closed === true || m.resolved === true || m.active === false) continue
+        if (m.umaResolutionStatus !== 'disputed') continue
 
         const price = parsePrice(m)
         const endDate = String(m.endDate || m.endDateIso || '')

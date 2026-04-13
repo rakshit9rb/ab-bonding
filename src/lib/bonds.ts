@@ -11,7 +11,7 @@ export interface Bond {
 }
 
 export type TimeFilter = 'all' | 'hours' | 'today' | 'week' | 'month'
-export type SortKey = 'apy' | 'prob' | 'expiry' | 'volume' | 'liquidity'
+export type SortKey = 'gain' | 'apy' | 'prob' | 'expiry' | 'volume' | 'liquidity'
 export type TimeLeft = 'any' | '1h' | '6h' | '12h' | '24h' | '7d'
 
 const GAMMA = 'https://gamma-api.polymarket.com'
@@ -104,10 +104,10 @@ function getLiquidity(m: Record<string, unknown>): number {
 }
 
 // Server-side only — called from API route
-export async function fetchBonds(minProb = 0.95): Promise<Bond[]> {
-  const PAGES = 5
+export async function fetchBonds(minProb = 0.90): Promise<Bond[]> {
+  const PAGES = 25
   const LIMIT = 200
-  const SORT_KEYS = ['volume24hr', 'liquidity']
+  const SORT_KEYS = ['volume24hr', 'liquidity', 'lastTradePrice', 'startDate']
 
   const pageUrls: string[] = []
   for (const order of SORT_KEYS) {
@@ -192,8 +192,16 @@ export async function fetchBonds(minProb = 0.95): Promise<Bond[]> {
     } catch {}
   }
 
-  // Enrich liquidity from CLOB order book (YES ask-side depth)
-  // liquidity = Σ(ask.size × ask.price) — total $ of YES shares available to buy
+  // Enrich liquidity from CLOB order book — only top 100 markets by volume
+  // to avoid hundreds of outbound requests slowing the response
+  const topTokenIds = Array.from(tokenIdToIdx.keys())
+    .sort((a, b) => (bonds[tokenIdToIdx.get(b)!].volume) - (bonds[tokenIdToIdx.get(a)!].volume))
+    .slice(0, 100)
+  const topTokenIdSet = new Set(topTokenIds)
+  for (const [id] of tokenIdToIdx) {
+    if (!topTokenIdSet.has(id)) tokenIdToIdx.delete(id)
+  }
+
   if (tokenIdToIdx.size > 0) {
     const CLOB = 'https://clob.polymarket.com'
     const tokenIds = Array.from(tokenIdToIdx.keys())
@@ -275,6 +283,7 @@ export function applyFilters(
 
   const dir = sortAsc ? 1 : -1
   filtered.sort((a, b) => {
+    if (sort === 'gain') return dir * (((1 - a.price) / a.price) - ((1 - b.price) / b.price))
     if (sort === 'apy') return dir * ((a.apy ?? 0) - (b.apy ?? 0))
     if (sort === 'prob') return dir * (a.price - b.price)
     if (sort === 'expiry') return dir * (new Date(a.endDate).getTime() - new Date(b.endDate).getTime())
@@ -290,6 +299,11 @@ export function fmtAPY(apy: number | null): string {
   if (apy == null) return '—'
   if (apy > 9999) return '>9999%'
   return apy.toFixed(1) + '%'
+}
+
+export function fmtGain(price: number): string {
+  const gain = ((1 - price) / price) * 100
+  return gain.toFixed(2) + '%'
 }
 
 export function fmtVolume(v: number): string {
