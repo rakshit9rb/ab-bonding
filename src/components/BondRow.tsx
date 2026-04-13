@@ -1,6 +1,6 @@
 'use client'
 import { memo } from 'react'
-import { Bond, fmtAPY, fmtVolume, fmtExpiry } from '@/lib/bonds'
+import { Bond, fmtGain, fmtVolume, fmtExpiry } from '@/lib/bonds'
 
 interface Props { bond: Bond; index: number; compact?: boolean; pinned?: boolean }
 
@@ -41,7 +41,7 @@ export default memo(function BondRow({ bond, index, pinned }: Props) {
       {/* Mobile: compact row with key values */}
       <div className="flex items-center gap-4 md:hidden pl-7">
         <span className="text-[14px] font-bold tabular-nums" style={{ color: 'var(--green)' }}>{probPct}%</span>
-        <span className="text-[14px] font-bold tabular-nums" style={{ color: apyColor }}>{fmtAPY(bond.apy)}</span>
+        <span className="text-[14px] font-bold tabular-nums" style={{ color: apyColor }}>{fmtGain(bond.price)}</span>
         <span className="text-[13px]" style={{ color: expColor }}>{label}</span>
       </div>
 
@@ -51,7 +51,7 @@ export default memo(function BondRow({ bond, index, pinned }: Props) {
       </div>
 
       <div className="hidden md:flex items-center">
-        <span className="text-[15px] font-bold tabular-nums" style={{ color: apyColor }}>{fmtAPY(bond.apy)}</span>
+        <span className="text-[15px] font-bold tabular-nums" style={{ color: apyColor }}>{fmtGain(bond.price)}</span>
       </div>
 
       <div className="hidden md:flex items-center">

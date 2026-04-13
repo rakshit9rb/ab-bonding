@@ -22,6 +22,7 @@ const TIME_OPTS: { value: TimeFilter; label: string }[] = [
 ]
 
 const SORT_OPTS: { value: SortKey; label: string }[] = [
+  { value: 'gain', label: 'Gain' },
   { value: 'apy', label: 'APY' },
   { value: 'prob', label: 'Probability' },
   { value: 'expiry', label: 'Expiry' },
