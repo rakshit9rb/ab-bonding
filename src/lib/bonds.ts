@@ -208,7 +208,7 @@ export async function fetchBonds(minProb = 0.90): Promise<Bond[]> {
     .sort((a, b) => (bonds[tokenIdToIdx.get(b)!].volume) - (bonds[tokenIdToIdx.get(a)!].volume))
     .slice(0, 100)
   const topTokenIdSet = new Set(topTokenIds)
-  for (const [id] of tokenIdToIdx) {
+  for (const id of Array.from(tokenIdToIdx.keys())) {
     if (!topTokenIdSet.has(id)) tokenIdToIdx.delete(id)
   }
 
