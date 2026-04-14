@@ -10,10 +10,16 @@ interface Props { bond: Bond; onClose: () => void }
 type Outcome = 'YES' | 'NO'
 
 function OrderBookDisplay({ book, outcome }: { book: OrderBook; outcome: Outcome }) {
+  // Always use YES token order book. For NO, invert prices (1-p) and swap bids/asks.
   // API returns asks DESC (0.99,0.98..) and bids ASC (0.01,0.02..)
-  // For display: best ask (lowest) nearest spread at bottom of asks, best bid (highest) nearest spread at top of bids
-  const asks = [...(book.asks ?? [])].slice(0, 8)           // already DESC, show as-is (worst→best top→bottom)
-  const bids = [...(book.bids ?? [])].reverse().slice(0, 8) // reverse to DESC so highest bid is first
+  const invert = (levels: { price: string; size: string }[]) =>
+    levels.map(l => ({ price: String((1 - parseFloat(l.price)).toFixed(4)), size: l.size }))
+
+  const rawAsks = outcome === 'NO' ? invert(book.bids ?? []) : (book.asks ?? [])
+  const rawBids = outcome === 'NO' ? invert(book.asks ?? []) : (book.bids ?? [])
+
+  const asks = [...rawAsks].slice(0, 8)           // DESC (worst→best top→bottom)
+  const bids = [...rawBids].reverse().slice(0, 8) // reverse ASC→DESC so highest bid is first
   const maxSize = Math.max(...[...asks, ...bids].map(l => parseFloat(l.size) || 0), 1)
 
   return (
@@ -83,27 +89,30 @@ export default function TradePanel({ bond, onClose }: Props) {
   const [statusMsg, setStatusMsg] = useState('')
 
   const wallet = wallets[0]
-  const tokenId = outcome === 'YES' ? bond.clobTokenIds?.[0] : bond.clobTokenIds?.[1]
+  const yesTokenId = bond.clobTokenIds?.[0]
+  const tokenId = outcome === 'YES' ? yesTokenId : bond.clobTokenIds?.[1]
   // asks from API are DESC so last element is best (lowest) ask
   // bids from API are ASC so last element is best (highest) bid
   const asksSorted = book?.asks ?? []
   const bidsSorted = book?.bids ?? []
-  const bestAsk = asksSorted.length ? parseFloat(asksSorted[asksSorted.length - 1].price) : null
-  const bestBid = bidsSorted.length ? parseFloat(bidsSorted[bidsSorted.length - 1].price) : null
+  const rawBestAsk = asksSorted.length ? parseFloat(asksSorted[asksSorted.length - 1].price) : null
+  const rawBestBid = bidsSorted.length ? parseFloat(bidsSorted[bidsSorted.length - 1].price) : null
+  const bestAsk = outcome === 'NO' && rawBestBid != null ? 1 - rawBestBid : rawBestAsk
+  const bestBid = outcome === 'NO' && rawBestAsk != null ? 1 - rawBestAsk : rawBestBid
   const lastTradePrice = book?.last_trade_price ? parseFloat(book.last_trade_price) : null
   const midPrice = lastTradePrice ?? (bestAsk && bestBid ? (bestAsk + bestBid) / 2 : bond.price)
 
   useEffect(() => {
-    if (!tokenId) return
+    if (!yesTokenId) return
     const load = () =>
-      fetch(`${CLOB_URL}/book?token_id=${tokenId}`)
+      fetch(`${CLOB_URL}/book?token_id=${yesTokenId}`)
         .then(r => r.ok ? r.json() : null)
         .then(data => data && setBook(data))
         .catch(() => {})
     load()
-    const id = setInterval(load, 5000)
+    const id = setInterval(load, 5 * 60 * 1000) // refresh every 5 min
     return () => clearInterval(id)
-  }, [tokenId])
+  }, [yesTokenId])
 
   useEffect(() => {
     if (!wallet?.address) return
