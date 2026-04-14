@@ -13,7 +13,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
           logo: 'https://onlybonds.fun/dark.svg',
         },
         embeddedWallets: {
-          createOnLogin: 'users-without-wallets',
+          ethereum: { createOnLogin: 'users-without-wallets' },
         },
       }}
     >
