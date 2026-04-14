@@ -117,7 +117,6 @@ export async function signAndPlaceOrder({
     const sideInt = side === 'BUY' ? 0 : 1
 
     // Amounts in USDC 6 decimals
-    const DECIMALS = 1_000_000n
     const makerAmountRaw = BigInt(Math.round(price * size * 1_000_000)) // USDC spent
     const takerAmountRaw = BigInt(Math.round(size * 1_000_000))          // shares received
 
@@ -129,9 +128,9 @@ export async function signAndPlaceOrder({
       tokenId: BigInt(tokenId),
       makerAmount: makerAmountRaw,
       takerAmount: takerAmountRaw,
-      expiration: 0n,
-      nonce: 0n,
-      feeRateBps: 0n,
+      expiration: BigInt(0),
+      nonce: BigInt(0),
+      feeRateBps: BigInt(0),
       side: sideInt,
       signatureType: 0, // EOA
     }
