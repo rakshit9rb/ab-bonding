@@ -10,8 +10,10 @@ interface Props { bond: Bond; onClose: () => void }
 type Outcome = 'YES' | 'NO'
 
 function OrderBookDisplay({ book, outcome }: { book: OrderBook; outcome: Outcome }) {
-  const asks = [...(book.asks ?? [])].slice(0, 8).reverse()
-  const bids = (book.bids ?? []).slice(0, 8)
+  // API returns asks DESC (0.99,0.98..) and bids ASC (0.01,0.02..)
+  // For display: best ask (lowest) nearest spread at bottom of asks, best bid (highest) nearest spread at top of bids
+  const asks = [...(book.asks ?? [])].slice(0, 8)           // already DESC, show as-is (worst→best top→bottom)
+  const bids = [...(book.bids ?? [])].reverse().slice(0, 8) // reverse to DESC so highest bid is first
   const maxSize = Math.max(...[...asks, ...bids].map(l => parseFloat(l.size) || 0), 1)
 
   return (
@@ -38,11 +40,15 @@ function OrderBookDisplay({ book, outcome }: { book: OrderBook; outcome: Outcome
       </div>
 
       {/* Spread */}
-      {book.asks?.[0] && book.bids?.[0] && (
-        <div className="text-center text-[10px] py-1 my-0.5" style={{ color: '#4b5563', borderTop: '1px solid #1f2937', borderBottom: '1px solid #1f2937' }}>
-          Spread {((parseFloat(book.asks[0].price) - parseFloat(book.bids[0].price)) * 100).toFixed(1)}¢
-        </div>
-      )}
+      {book.asks?.length && book.bids?.length && (() => {
+        const ba = parseFloat(book.asks[book.asks.length - 1].price)
+        const bb = parseFloat(book.bids[book.bids.length - 1].price)
+        return (
+          <div className="text-center text-[10px] py-1 my-0.5" style={{ color: '#4b5563', borderTop: '1px solid #1f2937', borderBottom: '1px solid #1f2937' }}>
+            Spread {((ba - bb) * 100).toFixed(1)}¢
+          </div>
+        )
+      })()}
 
       {/* Bids (buy side) */}
       <div className="flex flex-col gap-[2px] mt-1">
@@ -78,9 +84,14 @@ export default function TradePanel({ bond, onClose }: Props) {
 
   const wallet = wallets[0]
   const tokenId = outcome === 'YES' ? bond.clobTokenIds?.[0] : bond.clobTokenIds?.[1]
-  const bestAsk = book?.asks?.[0] ? parseFloat(book.asks[0].price) : null
-  const bestBid = book?.bids?.[0] ? parseFloat(book.bids[0].price) : null
-  const midPrice = bestAsk && bestBid ? (bestAsk + bestBid) / 2 : bond.price
+  // asks from API are DESC so last element is best (lowest) ask
+  // bids from API are ASC so last element is best (highest) bid
+  const asksSorted = book?.asks ?? []
+  const bidsSorted = book?.bids ?? []
+  const bestAsk = asksSorted.length ? parseFloat(asksSorted[asksSorted.length - 1].price) : null
+  const bestBid = bidsSorted.length ? parseFloat(bidsSorted[bidsSorted.length - 1].price) : null
+  const lastTradePrice = book?.last_trade_price ? parseFloat(book.last_trade_price) : null
+  const midPrice = lastTradePrice ?? (bestAsk && bestBid ? (bestAsk + bestBid) / 2 : bond.price)
 
   useEffect(() => {
     if (!tokenId) return
@@ -157,11 +168,13 @@ export default function TradePanel({ bond, onClose }: Props) {
             <div className="flex items-center gap-3 text-[12px] font-mono">
               <span style={{ color: '#4ade80' }}>B {bestBid ? (bestBid * 100).toFixed(1) : '—'}¢</span>
               <span style={{ color: '#f87171' }}>A {bestAsk ? (bestAsk * 100).toFixed(1) : '—'}¢</span>
-              <span style={{ color: '#6b7280' }}>Mid {(midPrice * 100).toFixed(1)}¢</span>
+              <span style={{ color: '#6b7280' }}>{lastTradePrice ? `Last ${(lastTradePrice * 100).toFixed(1)}¢` : `Mid ${(midPrice * 100).toFixed(1)}¢`}</span>
             </div>
           </div>
           {book ? (
-            <OrderBookDisplay book={book} outcome={outcome} />
+            <>
+              <OrderBookDisplay book={book} outcome={outcome} />
+            </>
           ) : (
             <div className="flex items-center justify-center h-32 text-[13px]" style={{ color: '#4b5563' }}>
               Loading order book…

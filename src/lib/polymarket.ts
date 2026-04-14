@@ -14,6 +14,9 @@ export type OrderType = 'GTC' | 'FOK' // Good-til-cancelled, Fill-or-kill (marke
 export interface OrderBook {
   bids: { price: string; size: string }[]
   asks: { price: string; size: string }[]
+  last_trade_price?: string
+  min_order_size?: string
+  tick_size?: string
 }
 
 export interface OrderPreview {
