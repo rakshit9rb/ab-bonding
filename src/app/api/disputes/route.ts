@@ -68,8 +68,16 @@ export async function GET() {
             : null) || m.slug || m.conditionId || ''
         )
 
+        let clobTokenIds: [string, string] | null = null
+        try {
+          const raw = m.clobTokenIds
+          const ids: string[] = typeof raw === 'string' ? JSON.parse(raw) : (raw as string[]) ?? []
+          if (ids[0] && ids[1]) clobTokenIds = [ids[0], ids[1]]
+        } catch {}
+
         bonds.push({
           id,
+          conditionId: id,
           question: String(m.question || m.title || 'Unknown'),
           slug,
           category: 'Disputed',
@@ -78,6 +86,8 @@ export async function GET() {
           endDate,
           volume: parseFloat(String(m.volume24hr || m.volumeNum || m.volumeClob || m.volume || 0)),
           liquidity: parseFloat(String(m.liquidityNum || m.liquidityClob || m.liquidity || 0)),
+          clobTokenIds,
+          negRisk: Boolean(m.negRisk),
         })
       }
     }
