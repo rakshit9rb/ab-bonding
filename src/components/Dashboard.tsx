@@ -384,7 +384,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
 
             {/* Column headers — desktop only */}
             {!loading && displayed.length > 0 && (
-              <div className="hidden md:grid py-3 text-[13px] font-semibold uppercase tracking-[0.06em]" style={{ gridTemplateColumns: '24px 1fr 110px 100px 120px 90px 90px', color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)' }}>
+              <div className="hidden md:grid py-3 text-[13px] font-semibold uppercase tracking-[0.06em]" style={{ gridTemplateColumns: '24px 1fr 110px 100px 120px 90px 90px 72px', color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)' }}>
                 <div></div><div>Market</div>
                 {(['prob','gain','expiry'] as const).map((key, i) => (
                   <button key={key} onClick={() => { if (sort === key) setSortAsc(v => !v); else { setSort(key); setSortAsc(false) } }} className="text-left cursor-pointer flex items-center gap-1" style={{ background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', letterSpacing: 'inherit', textTransform: 'inherit', color: sort === key ? 'var(--text)' : 'var(--text-tertiary)' }}>
@@ -408,7 +408,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
                   <div
                     key={i}
                     className="py-4 md:grid md:items-center"
-                    style={{ gridTemplateColumns: '24px 1fr 110px 100px 120px 90px 90px', borderBottom: '1px solid var(--border)', animationDelay: `${i * 0.05}s` }}
+                    style={{ gridTemplateColumns: '24px 1fr 110px 100px 120px 90px 90px 72px', borderBottom: '1px solid var(--border)', animationDelay: `${i * 0.05}s` }}
                   >
                     <div className="hidden md:block skeleton" style={{ width: 16, height: 16 }} />
                     <div className="flex items-center gap-2 mb-2 md:mb-0 md:pr-8">
@@ -483,7 +483,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
               </div>
             </div>
             {disputes.length > 0 && (
-              <div className="hidden md:grid py-3 text-[13px] font-semibold uppercase tracking-[0.06em]" style={{ gridTemplateColumns: '24px 1fr 110px 100px 120px 90px 90px', color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)' }}>
+              <div className="hidden md:grid py-3 text-[13px] font-semibold uppercase tracking-[0.06em]" style={{ gridTemplateColumns: '24px 1fr 110px 100px 120px 90px 90px 72px', color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)' }}>
                 <div></div><div>Market</div>
                 {(['prob','gain','expiry'] as const).map((key, i) => (
                   <button key={key} onClick={() => { if (sort === key) setSortAsc(v => !v); else { setSort(key); setSortAsc(false) } }} className="text-left cursor-pointer flex items-center gap-1" style={{ background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', letterSpacing: 'inherit', textTransform: 'inherit', color: sort === key ? 'var(--text)' : 'var(--text-tertiary)' }}>

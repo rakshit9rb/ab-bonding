@@ -8,6 +8,9 @@ export interface Bond {
   endDate: string     // ISO string
   volume: number
   liquidity: number
+  clobTokenIds: [string, string] | null  // [yesTokenId, noTokenId]
+  negRisk: boolean
+  conditionId: string
 }
 
 export type TimeFilter = 'all' | 'hours' | 'today' | 'week' | 'month'
@@ -172,8 +175,18 @@ export async function fetchBonds(minProb = 0.90): Promise<Bond[]> {
     if (new Date(endDate) <= now) continue
 
     const idx = bonds.length
+    let clobTokenIds: [string, string] | null = null
+    try {
+      const raw_ids = m.clobTokenIds
+      const ids: string[] = typeof raw_ids === 'string' ? JSON.parse(raw_ids) : (raw_ids as string[]) ?? []
+      if (ids[0] && ids[1]) clobTokenIds = [ids[0], ids[1]]
+      else if (ids[0]) clobTokenIds = [ids[0], ids[0]]
+    } catch {}
+
+    const conditionId = String(m.conditionId || m.id || Math.random())
     bonds.push({
-      id: String(m.conditionId || m.id || Math.random()),
+      id: conditionId,
+      conditionId,
       question: String(m.question || m.title || 'Unknown'),
       slug: String((Array.isArray(m.events) && m.events.length > 0 ? (m.events as any[])[0]?.slug : null) || m.slug || m.conditionId || ''),
       category: getCategory(m),
@@ -181,15 +194,12 @@ export async function fetchBonds(minProb = 0.90): Promise<Bond[]> {
       apy: calcAPY(price, endDate),
       endDate,
       volume: getVolume(m),
-      liquidity: getLiquidity(m), // Gamma fallback, replaced below if CLOB succeeds
+      liquidity: getLiquidity(m),
+      clobTokenIds,
+      negRisk: Boolean(m.negRisk),
     })
 
-    // Extract YES token ID (index 0) for CLOB order book lookup
-    try {
-      const raw_ids = m.clobTokenIds
-      const ids: string[] = typeof raw_ids === 'string' ? JSON.parse(raw_ids) : (raw_ids as string[]) ?? []
-      if (ids[0]) tokenIdToIdx.set(ids[0], idx)
-    } catch {}
+    if (clobTokenIds?.[0]) tokenIdToIdx.set(clobTokenIds[0], idx)
   }
 
   // Enrich liquidity from CLOB order book — only top 100 markets by volume
