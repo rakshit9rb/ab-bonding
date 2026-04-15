@@ -297,6 +297,25 @@ export default function Portfolio() {
   // Use proxy wallet if set, otherwise fall back to connected address
   const queryAddress = proxyAddress || address
 
+  // Auto-resolve proxy wallet from Polymarket API
+  useEffect(() => {
+    if (!address || proxyAddress) return
+    ;(async () => {
+      try {
+        // Try Polymarket data API profile endpoint
+        const res = await fetch(`https://data-api.polymarket.com/profile?address=${address.toLowerCase()}`)
+        if (res.ok) {
+          const data = await res.json()
+          const proxy = data?.proxyWallet ?? data?.proxy_wallet ?? data?.proxyAddress ?? data?.proxy
+          if (proxy && /^0x[0-9a-fA-F]{40}$/.test(proxy) && proxy.toLowerCase() !== address.toLowerCase()) {
+            setProxyAddress(proxy)
+            return
+          }
+        }
+      } catch {}
+    })()
+  }, [address, proxyAddress])
+
   useEffect(() => {
     if (!queryAddress) return
     setLoading(true)
