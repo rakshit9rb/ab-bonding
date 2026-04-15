@@ -194,10 +194,13 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
       {/* Navbar */}
       <nav className="sticky top-0 z-30 backdrop-blur-xl" style={{ background: 'color-mix(in srgb, var(--bg) 85%, transparent)', borderBottom: '1px solid var(--border)' }}>
         <div className="max-w-[1200px] mx-auto flex items-center justify-between px-4 md:px-8 h-14 md:h-16">
-          <div className="flex items-center gap-2 md:gap-2.5">
-            <img src="/light.svg" alt="OnlyBonds" className="h-5 md:h-7 dark:hidden" />
-            <img src="/dark.svg" alt="OnlyBonds" className="h-5 md:h-7 hidden dark:block" />
-            <span className="text-[12px] md:text-[14px]" style={{ color: 'var(--text-tertiary)' }}><span style={{ fontFamily: 'Georgia, serif', fontStyle: 'italic' }}>by</span> <a href="https://x.com/rb_tweets" target="_blank" rel="noopener noreferrer" className="font-sans" style={{ color: 'var(--text-secondary)', textDecoration: 'underline', textUnderlineOffset: '3px' }}>@rb_tweets</a></span>
+          <div className="flex items-center gap-3 md:gap-5">
+            <div className="flex items-center gap-2 md:gap-2.5">
+              <img src="/light.svg" alt="OnlyBonds" className="h-5 md:h-7 dark:hidden" />
+              <img src="/dark.svg" alt="OnlyBonds" className="h-5 md:h-7 hidden dark:block" />
+              <span className="text-[12px] md:text-[14px]" style={{ color: 'var(--text-tertiary)' }}><span style={{ fontFamily: 'Georgia, serif', fontStyle: 'italic' }}>by</span> <a href="https://x.com/rb_tweets" target="_blank" rel="noopener noreferrer" className="font-sans" style={{ color: 'var(--text-secondary)', textDecoration: 'underline', textUnderlineOffset: '3px' }}>@rb_tweets</a></span>
+            </div>
+            <a href="/portfolio" className="text-[13px] md:text-[14px] font-semibold" style={{ color: 'var(--text-tertiary)', textDecoration: 'none' }}>Portfolio</a>
           </div>
           <div className="flex items-center gap-3 md:gap-5">
             {!loading && <span className="hidden md:inline text-[14px]" style={{ color: 'var(--text-tertiary)' }}>{fetchedAt}</span>}
