@@ -149,8 +149,8 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
     }
   }, [])
 
-  useEffect(() => { load(); const id = setInterval(load, 60000); return () => clearInterval(id) }, [load])
-  useEffect(() => { loadDisputes(); const id = setInterval(loadDisputes, 60000); return () => clearInterval(id) }, [loadDisputes])
+  useEffect(() => { load(); const id = setInterval(load, 5 * 60 * 1000); return () => clearInterval(id) }, [load])
+  useEffect(() => { loadDisputes(); const id = setInterval(loadDisputes, 5 * 60 * 1000); return () => clearInterval(id) }, [loadDisputes])
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (filterRef.current && !filterRef.current.contains(e.target as Node)) setShowFilter(false)
