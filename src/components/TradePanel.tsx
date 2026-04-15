@@ -110,7 +110,7 @@ export default function TradePanel({ bond, onClose }: Props) {
         .then(data => data && setBook(data))
         .catch(() => {})
     load()
-    const id = setInterval(load, 5 * 60 * 1000) // refresh every 5 min
+    const id = setInterval(load, 2000) // refresh every 2s
     return () => clearInterval(id)
   }, [yesTokenId])
 
