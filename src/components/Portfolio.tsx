@@ -289,21 +289,25 @@ export default function Portfolio() {
   const [loading, setLoading] = useState(false)
   const [usdcBalance, setUsdcBalance] = useState<number | null>(null)
   const [tab, setTab] = useState<Tab>('positions')
+  const [proxyInput, setProxyInput] = useState('')
+  const [proxyAddress, setProxyAddress] = useState('')
 
   const wallet = wallets[0]
   const address = wallet?.address
+  // Use proxy wallet if set, otherwise fall back to connected address
+  const queryAddress = proxyAddress || address
 
   useEffect(() => {
-    if (!address) return
+    if (!queryAddress) return
     setLoading(true)
-    fetch(`https://data-api.polymarket.com/positions?user=${address}`)
+    fetch(`https://data-api.polymarket.com/positions?user=${queryAddress.toLowerCase()}`)
       .then(r => r.json())
       .then((data: Position[]) => setPositions(Array.isArray(data) ? data : []))
       .catch(() => setPositions([]))
       .finally(() => setLoading(false))
 
-    getUsdcBalance(address).then(setUsdcBalance)
-  }, [address])
+    getUsdcBalance(queryAddress).then(setUsdcBalance)
+  }, [queryAddress])
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
@@ -343,7 +347,34 @@ export default function Portfolio() {
           </div>
         ) : (
           <>
-            <SummaryBar positions={positions} usdcBalance={usdcBalance} address={address ?? ''} />
+            <SummaryBar positions={positions} usdcBalance={usdcBalance} address={queryAddress ?? ''} />
+
+            {/* Proxy wallet resolver — shown when no positions found */}
+            {!loading && positions.length === 0 && (
+              <div className="mb-6 p-4 rounded-xl" style={{ background: '#161b22', border: '1px solid #1f2937' }}>
+                <p className="text-[13px] mb-3" style={{ color: '#9ca3af' }}>
+                  No positions found for your connected address. Polymarket uses a separate <strong style={{ color: '#e5e7eb' }}>proxy wallet</strong> — find yours at{' '}
+                  <a href="https://polymarket.com/profile" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>polymarket.com/profile</a>
+                  {' '}(copy the address from the URL).
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    value={proxyInput}
+                    onChange={e => setProxyInput(e.target.value)}
+                    placeholder="0x... (your Polymarket proxy wallet)"
+                    className="flex-1 px-3 py-2 rounded-lg text-[13px] font-mono outline-none"
+                    style={{ background: '#0d1117', border: '1px solid #374151', color: '#e5e7eb' }}
+                  />
+                  <button
+                    onClick={() => proxyInput.startsWith('0x') && setProxyAddress(proxyInput.trim())}
+                    className="px-4 py-2 rounded-lg text-[13px] font-semibold cursor-pointer"
+                    style={{ background: 'var(--accent)', color: '#fff', border: 'none' }}
+                  >
+                    Load
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Tabs */}
             <div className="flex gap-6 mb-6" style={{ borderBottom: '1px solid #1f2937' }}>
@@ -375,7 +406,7 @@ export default function Portfolio() {
                   <PositionsTable positions={positions} />
                 )
               ) : (
-                address && <ActivityTable address={address} />
+                queryAddress && <ActivityTable address={queryAddress.toLowerCase()} />
               )}
             </div>
           </>
