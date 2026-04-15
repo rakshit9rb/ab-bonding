@@ -47,12 +47,8 @@ export default memo(function BondRow({ bond, index, pinned }: Props) {
             <span className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>{label}</span>
             <button
               onClick={() => setOpen(v => !v)}
-              className="ml-auto px-2.5 py-1 rounded-lg text-[12px] font-semibold cursor-pointer transition-all"
-              style={{
-                background: open ? 'rgba(5,150,80,0.25)' : 'rgba(5,150,80,0.1)',
-                border: `1px solid ${open ? 'rgba(5,150,80,0.6)' : 'rgba(5,150,80,0.25)'}`,
-                color: '#4ade80',
-              }}
+              className="ml-auto text-[12px] font-medium cursor-pointer transition-opacity hover:opacity-70 bg-transparent border-none p-0"
+              style={{ color: open ? 'var(--text-secondary)' : '#60a5fa' }}
             >
               {open ? 'Close' : 'Trade'}
             </button>
@@ -75,16 +71,12 @@ export default memo(function BondRow({ bond, index, pinned }: Props) {
             <span className="text-[14px] tabular-nums" style={{ color: 'var(--text-tertiary)' }}>{fmtVolume(bond.liquidity)}</span>
           </div>
 
-          {/* Trade button — always visible */}
+          {/* Buy button — always visible */}
           <div className="hidden md:flex items-center justify-end">
             <button
               onClick={() => setOpen(v => !v)}
-              className="px-3 py-1.5 rounded-lg text-[13px] font-semibold cursor-pointer transition-all"
-              style={{
-                background: open ? 'rgba(5,150,80,0.25)' : 'rgba(5,150,80,0.1)',
-                border: `1px solid ${open ? 'rgba(5,150,80,0.6)' : 'rgba(5,150,80,0.25)'}`,
-                color: '#4ade80',
-              }}
+              className="text-[13px] font-medium cursor-pointer transition-opacity hover:opacity-70 bg-transparent border-none p-0 appearance-none outline-none"
+              style={{ color: open ? 'var(--text-secondary)' : '#60a5fa' }}
             >
               {open ? 'Close' : 'Trade'}
             </button>
