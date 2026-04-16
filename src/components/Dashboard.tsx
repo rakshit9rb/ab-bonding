@@ -71,6 +71,32 @@ function ThemeToggle() {
 
 interface DashboardProps { initialBonds?: Bond[] }
 
+function PortfolioNavLink() {
+  const { authenticated } = usePrivy()
+  const { wallets } = useWallets()
+  const [balance, setBalance] = useState<number | null>(null)
+  const address = wallets[0]?.address
+
+  useEffect(() => {
+    if (!authenticated || !address) return
+    fetch(`/api/balance?address=${address}`)
+      .then(r => r.json())
+      .then(d => setBalance(typeof d.balance === 'number' ? d.balance : null))
+      .catch(() => {})
+  }, [authenticated, address])
+
+  return (
+    <a href="/portfolio" className="flex flex-col items-end no-underline leading-tight" style={{ textDecoration: 'none' }}>
+      <span className="text-[14px] font-semibold" style={{ color: 'var(--accent)' }}>Portfolio</span>
+      {authenticated && balance !== null && (
+        <span className="text-[13px] font-bold font-mono" style={{ color: '#4ade80' }}>
+          ${balance.toFixed(2)}
+        </span>
+      )}
+    </a>
+  )
+}
+
 function AuthButton() {
   const { ready, authenticated, user, login, logout } = usePrivy()
   const { wallets } = useWallets()
@@ -290,7 +316,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
           <div className="flex items-center gap-3 md:gap-5">
             {!loading && <span className="hidden md:inline text-[14px]" style={{ color: 'var(--text-tertiary)' }}>{fetchedAt}</span>}
             <ThemeToggle />
-            <a href="/portfolio" className="text-[14px] font-semibold" style={{ color: 'var(--accent)', textDecoration: 'none' }}>Portfolio</a>
+            <PortfolioNavLink />
             <AuthButton />
           </div>
         </div>
