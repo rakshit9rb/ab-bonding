@@ -114,23 +114,9 @@ function DepositPanel({ address, usdcBalance }: { address: string; usdcBalance: 
         </button>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <a href="https://wallet.polygon.technology/polygon/bridge" target="_blank" rel="noopener noreferrer"
-          className="px-3 py-1.5 rounded-lg text-[11px] font-semibold no-underline transition-opacity hover:opacity-80"
-          style={{ background: 'rgba(130,71,229,0.15)', border: '1px solid rgba(130,71,229,0.3)', color: '#a78bfa' }}>
-          Polygon Bridge →
-        </a>
-        <a href="https://app.across.to/?inputToken=USDC&outputToken=USDC&outputChain=137" target="_blank" rel="noopener noreferrer"
-          className="px-3 py-1.5 rounded-lg text-[11px] font-semibold no-underline transition-opacity hover:opacity-80"
-          style={{ background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.25)', color: '#60a5fa' }}>
-          Across Protocol →
-        </a>
-        <a href="https://app.uniswap.org/#/swap?chain=polygon&outputCurrency=0x2791bca1f2de4661ed88a30c99a7a9449aa84174" target="_blank" rel="noopener noreferrer"
-          className="px-3 py-1.5 rounded-lg text-[11px] font-semibold no-underline transition-opacity hover:opacity-80"
-          style={{ background: 'rgba(255,0,122,0.1)', border: '1px solid rgba(255,0,122,0.2)', color: '#f472b6' }}>
-          Buy on Uniswap →
-        </a>
-      </div>
+      <p className="text-[11px] mt-1" style={{ color: '#6b7280' }}>
+        Send USDC on <strong style={{ color: '#9ca3af' }}>Polygon</strong> only. Find your address in the account menu ↗
+      </p>
     </div>
   )
 }

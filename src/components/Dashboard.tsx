@@ -133,63 +133,53 @@ function AuthButton() {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-72 rounded-xl shadow-2xl z-50 overflow-hidden"
+        <div className="absolute right-0 mt-2 w-80 rounded-2xl shadow-2xl z-50"
           style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
 
-          {/* Address + balance */}
-          <div className="p-4" style={{ borderBottom: '1px solid var(--border)' }}>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Wallet (Polygon)</span>
-              {balance !== null && (
-                <span className="text-[12px] font-mono font-semibold" style={{ color: balance > 0 ? '#4ade80' : 'var(--text-tertiary)' }}>
-                  ${balance.toFixed(2)} USDC
-                </span>
-              )}
+          {/* Balance hero */}
+          <div className="px-5 pt-5 pb-4" style={{ borderBottom: '1px solid var(--border)' }}>
+            <div className="text-[11px] font-semibold uppercase tracking-widest mb-1" style={{ color: 'var(--text-tertiary)' }}>USDC Balance</div>
+            <div className="text-[32px] font-bold font-mono leading-none mb-0.5" style={{ color: 'var(--text)' }}>
+              {balance !== null ? `$${balance.toFixed(2)}` : '—'}
+            </div>
+            <div className="text-[12px]" style={{ color: 'var(--text-tertiary)' }}>on Polygon</div>
+          </div>
+
+          {/* Deposit address */}
+          <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
+            <div className="text-[11px] font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--text-tertiary)' }}>
+              Deposit address · Polygon
             </div>
             {address ? (
-              <div className="flex items-center gap-2 mt-2">
-                <code className="flex-1 text-[11px] font-mono truncate px-2 py-1.5 rounded-lg"
-                  style={{ background: 'var(--surface-secondary)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>
+              <>
+                <div className="font-mono text-[12px] break-all mb-3 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
                   {address}
-                </code>
+                </div>
                 <button onClick={copy}
-                  className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold cursor-pointer shrink-0"
-                  style={{ background: copied ? 'rgba(5,150,80,0.15)' : 'var(--surface-secondary)', border: '1px solid var(--border)', color: copied ? '#4ade80' : 'var(--text-tertiary)' }}>
-                  {copied ? '✓' : 'Copy'}
+                  className="w-full py-2 rounded-xl text-[13px] font-semibold cursor-pointer transition-all"
+                  style={{
+                    background: copied ? 'rgba(5,150,80,0.12)' : 'var(--surface-secondary)',
+                    border: `1px solid ${copied ? 'rgba(5,150,80,0.3)' : 'var(--border)'}`,
+                    color: copied ? '#4ade80' : 'var(--text-secondary)',
+                  }}>
+                  {copied ? '✓ Copied' : 'Copy address'}
                 </button>
-              </div>
+                <p className="text-[11px] mt-2 text-center leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>
+                  Send USDC on <strong style={{ color: 'var(--text-secondary)' }}>Polygon</strong> only
+                </p>
+              </>
             ) : (
-              <p className="text-[12px] mt-1" style={{ color: 'var(--text-tertiary)' }}>Loading wallet…</p>
+              <p className="text-[13px]" style={{ color: 'var(--text-tertiary)' }}>Loading wallet…</p>
             )}
           </div>
 
-          {/* Deposit links */}
-          <div className="p-3" style={{ borderBottom: '1px solid var(--border)' }}>
-            <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-tertiary)' }}>Deposit USDC on Polygon</p>
-            <div className="flex flex-col gap-1.5">
-              <a href="https://wallet.polygon.technology/polygon/bridge" target="_blank" rel="noopener noreferrer"
-                className="flex items-center justify-between px-3 py-2 rounded-lg text-[12px] font-medium no-underline transition-opacity hover:opacity-80"
-                style={{ background: 'rgba(130,71,229,0.1)', border: '1px solid rgba(130,71,229,0.2)', color: '#a78bfa' }}>
-                <span>Polygon Bridge</span><span>→</span>
-              </a>
-              <a href="https://app.across.to/?inputToken=USDC&outputToken=USDC&outputChain=137" target="_blank" rel="noopener noreferrer"
-                className="flex items-center justify-between px-3 py-2 rounded-lg text-[12px] font-medium no-underline transition-opacity hover:opacity-80"
-                style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.18)', color: '#60a5fa' }}>
-                <span>Across Protocol</span><span>→</span>
-              </a>
-              <a href="https://app.uniswap.org/#/swap?chain=polygon&outputCurrency=0x2791bca1f2de4661ed88a30c99a7a9449aa84174" target="_blank" rel="noopener noreferrer"
-                className="flex items-center justify-between px-3 py-2 rounded-lg text-[12px] font-medium no-underline transition-opacity hover:opacity-80"
-                style={{ background: 'rgba(255,0,122,0.07)', border: '1px solid rgba(255,0,122,0.15)', color: '#f472b6' }}>
-                <span>Buy on Uniswap</span><span>→</span>
-              </a>
-            </div>
-          </div>
-
           {/* Footer */}
-          <div className="flex items-center justify-between px-4 py-3">
-            <a href="/portfolio" className="text-[12px] font-medium no-underline" style={{ color: 'var(--accent)' }}>Portfolio →</a>
+          <div className="flex items-center justify-between px-5 py-3">
+            <a href="/portfolio" className="text-[13px] font-semibold no-underline" style={{ color: 'var(--accent)' }}>
+              Portfolio →
+            </a>
             <button onClick={logout}
-              className="text-[12px] cursor-pointer"
+              className="text-[13px] cursor-pointer appearance-none"
               style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)' }}>
               Sign out
             </button>
