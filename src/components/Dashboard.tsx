@@ -165,7 +165,7 @@ function AuthButton() {
                   {copied ? '✓ Copied' : 'Copy address'}
                 </button>
                 <p className="text-[11px] mt-2 text-center leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>
-                  Send USDC on <strong style={{ color: 'var(--text-secondary)' }}>Polygon</strong> only
+                  Send <strong style={{ color: 'var(--text-secondary)' }}>USDC.e</strong> on <strong style={{ color: 'var(--text-secondary)' }}>Polygon</strong> only
                 </p>
               </>
             ) : (
