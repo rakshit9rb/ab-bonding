@@ -258,6 +258,8 @@ export default function TradePanel({ bond, onClose }: Props) {
     setStatus('approving'); setStatusMsg('Approving USDC…')
     try {
       const provider = await wallet.getEthereumProvider()
+      // Always switch to Polygon before any transaction
+      try { await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x89' }] }) } catch {}
       const wc = createWalletClient({ chain: polygon, transport: custom(provider) })
       const result = await approveUsdc(wc, wallet.address, exchange)
       if (result.success) {
@@ -281,6 +283,8 @@ export default function TradePanel({ bond, onClose }: Props) {
     setStatus('loading'); setStatusMsg('')
     try {
       const provider = await wallet.getEthereumProvider()
+      // Always switch to Polygon before any transaction
+      try { await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x89' }] }) } catch {}
       const wc = createWalletClient({ chain: polygon, transport: custom(provider) })
 
       // Ensure L2 creds

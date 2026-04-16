@@ -1,7 +1,9 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { usePrivy, useWallets } from '@privy-io/react-auth'
-import { getUsdcBalance } from '@/lib/polymarket'
+import { getUsdcBalance, USDC_ADDRESS } from '@/lib/polymarket'
+import { createWalletClient, custom } from 'viem'
+import { polygon } from 'viem/chains'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -61,16 +63,161 @@ function PnlBadge({ value, pct }: { value: number; pct?: number }) {
   )
 }
 
+// ─── Funds Panel (Deposit / Withdraw) ────────────────────────────────────────
+
+function FundsPanel({ address, usdcBalance, onBalanceRefresh }: { address: string; usdcBalance: number | null; onBalanceRefresh: () => void }) {
+  const { wallets } = useWallets()
+  const [tab, setTab] = useState<'deposit' | 'withdraw'>('deposit')
+  const [copied, setCopied] = useState(false)
+  const [withdrawTo, setWithdrawTo] = useState('')
+  const [withdrawAmt, setWithdrawAmt] = useState('')
+  const [txStatus, setTxStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
+  const [txMsg, setTxMsg] = useState('')
+
+  const copy = () => {
+    navigator.clipboard.writeText(address).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
+  }
+
+  const handleWithdraw = async () => {
+    const wallet = wallets[0]
+    if (!wallet || !withdrawTo || !withdrawAmt) return
+    const amt = parseFloat(withdrawAmt)
+    if (isNaN(amt) || amt <= 0) return
+    setTxStatus('loading'); setTxMsg('')
+    try {
+      const provider = await wallet.getEthereumProvider()
+      // Switch to Polygon first
+      try { await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x89' }] }) } catch {}
+      const wc = createWalletClient({ chain: polygon, transport: custom(provider) })
+      // ERC-20 transfer(to, amount)
+      const toPad  = withdrawTo.slice(2).toLowerCase().padStart(64, '0')
+      const rawAmt = BigInt(Math.round(amt * 1_000_000))
+      const amtHex = rawAmt.toString(16).padStart(64, '0')
+      await wc.sendTransaction({
+        account: address as `0x${string}`,
+        to:   USDC_ADDRESS,
+        data: `0xa9059cbb${toPad}${amtHex}` as `0x${string}`,
+        chain: polygon,
+      })
+      setTxStatus('success'); setTxMsg(`Sent $${amt.toFixed(2)} USDC.e`)
+      setWithdrawAmt(''); setWithdrawTo('')
+      setTimeout(onBalanceRefresh, 3000)
+    } catch (e: any) {
+      setTxStatus('error'); setTxMsg(e?.message ?? 'Transaction failed')
+    }
+  }
+
+  return (
+    <div className="rounded-xl mb-6 overflow-hidden" style={{ background: '#161b22', border: '1px solid #1f2937' }}>
+      {/* Tabs */}
+      <div className="flex" style={{ borderBottom: '1px solid #1f2937' }}>
+        {(['deposit', 'withdraw'] as const).map(t => (
+          <button key={t} onClick={() => { setTab(t); setTxStatus('idle'); setTxMsg('') }}
+            className="flex-1 py-3 text-[13px] font-semibold cursor-pointer capitalize transition-colors"
+            style={{
+              background: 'none', border: 'none',
+              color: tab === t ? '#e5e7eb' : '#4b5563',
+              borderBottom: tab === t ? '2px solid #4ade80' : '2px solid transparent',
+              marginBottom: '-1px',
+            }}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      <div className="p-5">
+        {tab === 'deposit' ? (
+          <>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[12px]" style={{ color: '#6b7280' }}>Your wallet address · Polygon</span>
+              {usdcBalance !== null && (
+                <span className="text-[13px] font-mono font-bold" style={{ color: usdcBalance > 0 ? '#4ade80' : '#6b7280' }}>
+                  ${usdcBalance.toFixed(2)} USDC.e
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 mt-2 mb-3">
+              <code className="flex-1 text-[12px] font-mono px-3 py-2.5 rounded-lg truncate"
+                style={{ background: '#0d1117', border: '1px solid #374151', color: '#9ca3af' }}>
+                {address}
+              </code>
+              <button onClick={copy}
+                className="px-4 py-2.5 rounded-lg text-[13px] font-semibold cursor-pointer shrink-0 transition-all"
+                style={{ background: copied ? 'rgba(5,150,80,0.15)' : 'rgba(255,255,255,0.05)', border: `1px solid ${copied ? 'rgba(5,150,80,0.3)' : '#374151'}`, color: copied ? '#4ade80' : '#9ca3af' }}>
+                {copied ? '✓ Copied' : 'Copy'}
+              </button>
+            </div>
+            <p className="text-[12px]" style={{ color: '#4b5563' }}>
+              Send <strong style={{ color: '#6b7280' }}>USDC.e</strong> on <strong style={{ color: '#6b7280' }}>Polygon</strong> only to this address.
+            </p>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[12px]" style={{ color: '#6b7280' }}>Send USDC.e to another address</span>
+              {usdcBalance !== null && (
+                <span className="text-[12px] font-mono" style={{ color: '#6b7280' }}>
+                  Available: <span style={{ color: '#9ca3af' }}>${usdcBalance.toFixed(2)}</span>
+                </span>
+              )}
+            </div>
+            <div className="flex flex-col gap-2">
+              <input
+                value={withdrawTo}
+                onChange={e => setWithdrawTo(e.target.value)}
+                placeholder="Destination address (0x…)"
+                className="w-full px-3 py-2.5 rounded-lg text-[13px] font-mono outline-none"
+                style={{ background: '#0d1117', border: '1px solid #374151', color: '#e5e7eb' }}
+              />
+              <div className="flex gap-2">
+                <input
+                  value={withdrawAmt}
+                  onChange={e => setWithdrawAmt(e.target.value)}
+                  placeholder="Amount (USDC.e)"
+                  type="number" min="0"
+                  className="flex-1 px-3 py-2.5 rounded-lg text-[13px] font-mono outline-none"
+                  style={{ background: '#0d1117', border: '1px solid #374151', color: '#e5e7eb' }}
+                />
+                {usdcBalance !== null && (
+                  <button onClick={() => setWithdrawAmt(usdcBalance.toFixed(2))}
+                    className="px-3 py-2 rounded-lg text-[12px] cursor-pointer shrink-0"
+                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #374151', color: '#6b7280' }}>
+                    Max
+                  </button>
+                )}
+              </div>
+              {txMsg && (
+                <div className="text-[12px] px-3 py-2 rounded-lg" style={{
+                  background: txStatus === 'success' ? 'rgba(5,150,80,0.1)' : 'rgba(220,38,38,0.1)',
+                  color: txStatus === 'success' ? '#4ade80' : '#f87171',
+                }}>
+                  {txMsg}
+                </div>
+              )}
+              <button
+                onClick={handleWithdraw}
+                disabled={txStatus === 'loading' || !withdrawTo || !withdrawAmt}
+                className="w-full py-2.5 rounded-lg text-[14px] font-semibold cursor-pointer transition-all disabled:opacity-40"
+                style={{ background: 'rgba(220,38,38,0.15)', border: '1px solid rgba(220,38,38,0.3)', color: '#f87171' }}>
+                {txStatus === 'loading' ? 'Sending…' : 'Withdraw'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Summary Bar ─────────────────────────────────────────────────────────────
 
-function SummaryBar({ positions, usdcBalance, address }: { positions: Position[]; usdcBalance: number | null; address: string }) {
+function SummaryBar({ positions, usdcBalance }: { positions: Position[]; usdcBalance: number | null }) {
   const totalInvested = positions.reduce((s, p) => s + p.totalBought, 0)
   const totalValue = positions.reduce((s, p) => s + p.currentValue, 0)
   const totalPnl = positions.reduce((s, p) => s + p.cashPnl, 0)
   const open = positions.filter(p => !p.redeemable).length
 
   const stats = [
-    { label: 'USDC Balance', value: usdcBalance != null ? fmt$(usdcBalance) : '—', color: 'var(--text)' },
     { label: 'Invested', value: fmt$(totalInvested), color: 'var(--text)' },
     { label: 'Current Value', value: fmt$(totalValue), color: 'var(--text)' },
     { label: 'Total PnL', value: fmt$(totalPnl), color: totalPnl >= 0 ? '#4ade80' : '#f87171' },
@@ -78,29 +225,13 @@ function SummaryBar({ positions, usdcBalance, address }: { positions: Position[]
   ]
 
   return (
-    <div className="rounded-xl p-5 mb-6 flex flex-wrap gap-6 items-center justify-between" style={{ background: '#161b22', border: '1px solid #1f2937' }}>
-      <div className="flex flex-wrap gap-8">
-        {stats.map(s => (
-          <div key={s.label}>
-            <div className="text-[11px] font-semibold uppercase tracking-wider mb-1" style={{ color: '#6b7280' }}>{s.label}</div>
-            <div className="text-[22px] font-bold font-mono leading-none" style={{ color: s.color }}>{s.value}</div>
-          </div>
-        ))}
-      </div>
-      <div className="flex items-center gap-3">
-        <span className="text-[12px] font-mono hidden md:block" style={{ color: '#4b5563' }}>
-          {address.slice(0, 6)}…{address.slice(-4)}
-        </span>
-        <a
-          href="https://polymarket.com/wallet?via=onlybonds"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="px-3 py-2 rounded-lg text-[13px] font-semibold transition-all"
-          style={{ background: 'rgba(5,150,80,0.15)', border: '1px solid rgba(5,150,80,0.3)', color: '#4ade80', textDecoration: 'none' }}
-        >
-          Deposit on Polymarket →
-        </a>
-      </div>
+    <div className="rounded-xl p-5 mb-4 flex flex-wrap gap-8" style={{ background: '#161b22', border: '1px solid #1f2937' }}>
+      {stats.map(s => (
+        <div key={s.label}>
+          <div className="text-[11px] font-semibold uppercase tracking-wider mb-1" style={{ color: '#6b7280' }}>{s.label}</div>
+          <div className="text-[22px] font-bold font-mono leading-none" style={{ color: s.color }}>{s.value}</div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -289,44 +420,21 @@ export default function Portfolio() {
   const [loading, setLoading] = useState(false)
   const [usdcBalance, setUsdcBalance] = useState<number | null>(null)
   const [tab, setTab] = useState<Tab>('positions')
-  const [proxyInput, setProxyInput] = useState('')
-  const [proxyAddress, setProxyAddress] = useState('')
 
   const wallet = wallets[0]
   const address = wallet?.address
-  // Use proxy wallet if set, otherwise fall back to connected address
-  const queryAddress = proxyAddress || address
-
-  // Auto-resolve proxy wallet from Polymarket API
-  useEffect(() => {
-    if (!address || proxyAddress) return
-    ;(async () => {
-      try {
-        // Try Polymarket data API profile endpoint
-        const res = await fetch(`https://data-api.polymarket.com/profile?address=${address.toLowerCase()}`)
-        if (res.ok) {
-          const data = await res.json()
-          const proxy = data?.proxyWallet ?? data?.proxy_wallet ?? data?.proxyAddress ?? data?.proxy
-          if (proxy && /^0x[0-9a-fA-F]{40}$/.test(proxy) && proxy.toLowerCase() !== address.toLowerCase()) {
-            setProxyAddress(proxy)
-            return
-          }
-        }
-      } catch {}
-    })()
-  }, [address, proxyAddress])
 
   useEffect(() => {
-    if (!queryAddress) return
+    if (!address) return
     setLoading(true)
-    fetch(`https://data-api.polymarket.com/positions?user=${queryAddress.toLowerCase()}`)
+    fetch(`https://data-api.polymarket.com/positions?user=${address.toLowerCase()}`)
       .then(r => r.json())
       .then((data: Position[]) => setPositions(Array.isArray(data) ? data : []))
       .catch(() => setPositions([]))
       .finally(() => setLoading(false))
 
-    getUsdcBalance(queryAddress).then(setUsdcBalance)
-  }, [queryAddress])
+    getUsdcBalance(address).then(setUsdcBalance)
+  }, [address])
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
@@ -366,34 +474,8 @@ export default function Portfolio() {
           </div>
         ) : (
           <>
-            <SummaryBar positions={positions} usdcBalance={usdcBalance} address={queryAddress ?? ''} />
-
-            {/* Proxy wallet resolver — shown when no positions found */}
-            {!loading && positions.length === 0 && (
-              <div className="mb-6 p-4 rounded-xl" style={{ background: '#161b22', border: '1px solid #1f2937' }}>
-                <p className="text-[13px] mb-3" style={{ color: '#9ca3af' }}>
-                  No positions found for your connected address. Polymarket uses a separate <strong style={{ color: '#e5e7eb' }}>proxy wallet</strong> — find yours at{' '}
-                  <a href="https://polymarket.com/profile" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>polymarket.com/profile</a>
-                  {' '}(copy the address from the URL).
-                </p>
-                <div className="flex gap-2">
-                  <input
-                    value={proxyInput}
-                    onChange={e => setProxyInput(e.target.value)}
-                    placeholder="0x... (your Polymarket proxy wallet)"
-                    className="flex-1 px-3 py-2 rounded-lg text-[13px] font-mono outline-none"
-                    style={{ background: '#0d1117', border: '1px solid #374151', color: '#e5e7eb' }}
-                  />
-                  <button
-                    onClick={() => proxyInput.startsWith('0x') && setProxyAddress(proxyInput.trim())}
-                    className="px-4 py-2 rounded-lg text-[13px] font-semibold cursor-pointer"
-                    style={{ background: 'var(--accent)', color: '#fff', border: 'none' }}
-                  >
-                    Load
-                  </button>
-                </div>
-              </div>
-            )}
+            <FundsPanel address={address ?? ''} usdcBalance={usdcBalance} onBalanceRefresh={() => address && getUsdcBalance(address).then(setUsdcBalance)} />
+            <SummaryBar positions={positions} usdcBalance={usdcBalance} />
 
             {/* Tabs */}
             <div className="flex gap-6 mb-6" style={{ borderBottom: '1px solid #1f2937' }}>
@@ -425,7 +507,7 @@ export default function Portfolio() {
                   <PositionsTable positions={positions} />
                 )
               ) : (
-                queryAddress && <ActivityTable address={queryAddress.toLowerCase()} />
+                address && <ActivityTable address={address.toLowerCase()} />
               )}
             </div>
           </>

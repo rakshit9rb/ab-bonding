@@ -135,14 +135,12 @@ export async function approveUsdc(
   spender: string,
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { polygon } = await import('viem/chains')
     const spenderPad = spender.slice(2).toLowerCase().padStart(64, '0')
     const maxVal     = 'f'.repeat(64)
     const hash = await walletClient.sendTransaction({
       account: address as `0x${string}`,
       to:      USDC_ADDRESS,
       data:    `0x095ea7b3${spenderPad}${maxVal}` as `0x${string}`,
-      chain:   polygon,
     })
     return { success: true, error: hash }
   } catch (e: any) {
@@ -190,7 +188,6 @@ export async function signAndPlaceOrder({
   l2Headers?: Record<string, string>
 }): Promise<{ success: boolean; orderId?: string; error?: string }> {
   try {
-    const { polygon } = await import('viem/chains')
     const exchange = negRisk ? NEG_RISK_CTF_EXCHANGE : CTF_EXCHANGE
     const salt     = BigInt(Math.floor(Math.random() * 1e15))
     const sideInt  = side === 'BUY' ? 0 : 1
