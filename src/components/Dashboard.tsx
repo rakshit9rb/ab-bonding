@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { usePrivy } from '@privy-io/react-auth'
+import { usePrivy, useWallets } from '@privy-io/react-auth'
 import { Bond, TimeFilter, SortKey, TimeLeft, applyFilters, splitPinned, getCategories, fmtAPY, fmtGain, fmtVolume } from '@/lib/bonds'
 import { PINNED_MARKETS } from '@/lib/constants'
 import BondRow from './BondRow'
@@ -73,32 +73,130 @@ interface DashboardProps { initialBonds?: Bond[] }
 
 function AuthButton() {
   const { ready, authenticated, user, login, logout } = usePrivy()
+  const { wallets } = useWallets()
+  const [open, setOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [balance, setBalance] = useState<number | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+
+  const wallet = wallets[0]
+  const address = wallet?.address
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  // Fetch balance when dropdown opens
+  useEffect(() => {
+    if (!open || !address) return
+    fetch(`/api/balance?address=${address}`)
+      .then(r => r.json())
+      .then(d => setBalance(typeof d.balance === 'number' ? d.balance : null))
+      .catch(() => {})
+  }, [open, address])
+
+  const copy = () => {
+    if (!address) return
+    navigator.clipboard.writeText(address).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
+  }
+
   if (!ready) return null
 
-  if (authenticated && user) {
-    const label = user.google?.email ?? user.wallet?.address?.slice(0, 6) + '…' + user.wallet?.address?.slice(-4) ?? 'Account'
+  if (!authenticated) {
     return (
-      <div className="flex items-center gap-3">
-        <span className="hidden md:inline text-[13px]" style={{ color: 'var(--text-secondary)' }}>{label}</span>
-        <button
-          onClick={logout}
-          className="text-[13px] cursor-pointer transition-colors"
-          style={{ background: 'none', border: 'none', padding: 0, color: 'var(--text-tertiary)' }}
-        >
-          Sign out
-        </button>
-      </div>
+      <button
+        onClick={login}
+        className="text-[13px] md:text-[14px] font-semibold px-3 py-1.5 rounded-lg cursor-pointer transition-all hover:opacity-90"
+        style={{ background: 'var(--accent)', color: '#fff', border: 'none' }}
+      >
+        Sign in
+      </button>
     )
   }
 
+  const label = user?.google?.email?.split('@')[0] ?? (address ? address.slice(0, 6) + '…' + address.slice(-4) : 'Account')
+
   return (
-    <button
-      onClick={login}
-      className="text-[13px] md:text-[14px] font-semibold px-3 py-1.5 rounded-lg cursor-pointer transition-all hover:opacity-90"
-      style={{ background: 'var(--accent)', color: '#fff', border: 'none' }}
-    >
-      Sign in
-    </button>
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13px] font-medium cursor-pointer transition-all"
+        style={{ background: open ? 'var(--surface-secondary)' : 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+      >
+        <span className="w-2 h-2 rounded-full" style={{ background: '#4ade80', flexShrink: 0 }} />
+        {label}
+        <span style={{ color: 'var(--text-tertiary)', fontSize: 10 }}>▾</span>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 mt-2 w-72 rounded-xl shadow-2xl z-50 overflow-hidden"
+          style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+
+          {/* Address + balance */}
+          <div className="p-4" style={{ borderBottom: '1px solid var(--border)' }}>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Wallet (Polygon)</span>
+              {balance !== null && (
+                <span className="text-[12px] font-mono font-semibold" style={{ color: balance > 0 ? '#4ade80' : 'var(--text-tertiary)' }}>
+                  ${balance.toFixed(2)} USDC
+                </span>
+              )}
+            </div>
+            {address ? (
+              <div className="flex items-center gap-2 mt-2">
+                <code className="flex-1 text-[11px] font-mono truncate px-2 py-1.5 rounded-lg"
+                  style={{ background: 'var(--surface-secondary)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>
+                  {address}
+                </code>
+                <button onClick={copy}
+                  className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold cursor-pointer shrink-0"
+                  style={{ background: copied ? 'rgba(5,150,80,0.15)' : 'var(--surface-secondary)', border: '1px solid var(--border)', color: copied ? '#4ade80' : 'var(--text-tertiary)' }}>
+                  {copied ? '✓' : 'Copy'}
+                </button>
+              </div>
+            ) : (
+              <p className="text-[12px] mt-1" style={{ color: 'var(--text-tertiary)' }}>Loading wallet…</p>
+            )}
+          </div>
+
+          {/* Deposit links */}
+          <div className="p-3" style={{ borderBottom: '1px solid var(--border)' }}>
+            <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-tertiary)' }}>Deposit USDC on Polygon</p>
+            <div className="flex flex-col gap-1.5">
+              <a href="https://wallet.polygon.technology/polygon/bridge" target="_blank" rel="noopener noreferrer"
+                className="flex items-center justify-between px-3 py-2 rounded-lg text-[12px] font-medium no-underline transition-opacity hover:opacity-80"
+                style={{ background: 'rgba(130,71,229,0.1)', border: '1px solid rgba(130,71,229,0.2)', color: '#a78bfa' }}>
+                <span>Polygon Bridge</span><span>→</span>
+              </a>
+              <a href="https://app.across.to/?inputToken=USDC&outputToken=USDC&outputChain=137" target="_blank" rel="noopener noreferrer"
+                className="flex items-center justify-between px-3 py-2 rounded-lg text-[12px] font-medium no-underline transition-opacity hover:opacity-80"
+                style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.18)', color: '#60a5fa' }}>
+                <span>Across Protocol</span><span>→</span>
+              </a>
+              <a href="https://app.uniswap.org/#/swap?chain=polygon&outputCurrency=0x2791bca1f2de4661ed88a30c99a7a9449aa84174" target="_blank" rel="noopener noreferrer"
+                className="flex items-center justify-between px-3 py-2 rounded-lg text-[12px] font-medium no-underline transition-opacity hover:opacity-80"
+                style={{ background: 'rgba(255,0,122,0.07)', border: '1px solid rgba(255,0,122,0.15)', color: '#f472b6' }}>
+                <span>Buy on Uniswap</span><span>→</span>
+              </a>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="flex items-center justify-between px-4 py-3">
+            <a href="/portfolio" className="text-[12px] font-medium no-underline" style={{ color: 'var(--accent)' }}>Portfolio →</a>
+            <button onClick={logout}
+              className="text-[12px] cursor-pointer"
+              style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)' }}>
+              Sign out
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
