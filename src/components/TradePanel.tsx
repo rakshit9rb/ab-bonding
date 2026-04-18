@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { usePrivy, useWallets } from '@privy-io/react-auth'
+import { usePostHog } from 'posthog-js/react'
 import { createWalletClient, custom } from 'viem'
 import { polygon } from 'viem/chains'
 import { Bond, fmtVolume } from '@/lib/bonds'
@@ -126,8 +127,9 @@ function DepositPanel({ address, usdcBalance }: { address: string; usdcBalance: 
 type Status = 'idle' | 'loading' | 'success' | 'error' | 'approving' | 'switching' | 'authing'
 
 export default function TradePanel({ bond, onClose }: Props) {
-  const { authenticated, login } = usePrivy()
+  const { authenticated, login, user } = usePrivy()
   const { wallets } = useWallets()
+  const posthog = usePostHog()
 
   const [outcome,   setOutcome]   = useState<Outcome>('YES')
   const [tradeDir,  setTradeDir]  = useState<TradeDir>('BUY')
@@ -143,6 +145,7 @@ export default function TradePanel({ bond, onClose }: Props) {
   const [status,    setStatus]    = useState<Status>('idle')
   const [statusMsg, setStatusMsg] = useState('')
   const [showDeposit, setShowDeposit] = useState(false)
+  const previewSig = useRef('')
 
   const wallet      = wallets[0]
   const yesTokenId  = bond.clobTokenIds?.[0]
@@ -160,6 +163,41 @@ export default function TradePanel({ bond, onClose }: Props) {
   const midPrice    = lastPrice ?? (bestAsk && bestBid ? (bestAsk + bestBid) / 2 : bond.price)
 
   const onPolygon   = chainId === 137
+
+  const metricProps = useCallback((overrides: Record<string, unknown> = {}) => ({
+    user_id: user?.id ?? null,
+    wallet_address: wallet?.address ?? null,
+    bond_id: bond.id,
+    condition_id: bond.conditionId,
+    market_slug: bond.slug,
+    trade_dir: tradeDir,
+    outcome,
+    order_type: orderType,
+    neg_risk: bond.negRisk,
+    ...overrides,
+  }), [user?.id, wallet?.address, bond.id, bond.conditionId, bond.slug, tradeDir, outcome, orderType, bond.negRisk])
+
+  const captureServer = useCallback((event: string, properties: Record<string, unknown> = {}) => {
+    const distinctId = user?.id
+    if (!distinctId) return
+    void fetch('/api/metrics/trade', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event, distinctId, properties }),
+    })
+  }, [user?.id])
+
+  useEffect(() => {
+    posthog?.capture('trade_panel_opened', metricProps({
+      market_volume: bond.volume,
+      market_liquidity: bond.liquidity,
+    }))
+  }, [posthog, metricProps, bond.volume, bond.liquidity])
+
+  useEffect(() => {
+    if (!authenticated || !user?.id) return
+    posthog?.identify(user.id, { wallet_address: wallet?.address ?? null })
+  }, [authenticated, user?.id, wallet?.address, posthog])
 
   // Order book polling every 2s
   useEffect(() => {
@@ -209,9 +247,31 @@ export default function TradePanel({ bond, onClose }: Props) {
     }
   }, [book, amount, outcome, tradeDir, orderType, limitPrice])
 
+  useEffect(() => {
+    if (!preview) return
+    const sig = [
+      tradeDir,
+      outcome,
+      orderType,
+      preview.shares.toFixed(4),
+      preview.avgPrice.toFixed(4),
+      preview.totalCost.toFixed(4),
+    ].join(':')
+    if (sig === previewSig.current) return
+    previewSig.current = sig
+    posthog?.capture('trade_preview_computed', metricProps({
+      shares: preview.shares,
+      avg_price: preview.avgPrice,
+      notional_usdc: preview.totalCost,
+      price_impact: preview.priceImpact,
+    }))
+  }, [preview, tradeDir, outcome, orderType, posthog, metricProps])
+
   // Switch to Polygon
   const switchToPolygon = useCallback(async () => {
     if (!wallet) return
+    posthog?.capture('network_switch_attempted', metricProps())
+    captureServer('network_switch_attempted', metricProps())
     setStatus('switching')
     try {
       const provider = await wallet.getEthereumProvider()
@@ -236,11 +296,17 @@ export default function TradePanel({ bond, onClose }: Props) {
       getUsdcBalance(wallet.address).then(setUsdcBalance)
       getUsdcAllowance(wallet.address, exchange).then(setAllowance)
     } catch (e: any) {
+      posthog?.capture('network_switch_failed', metricProps({
+        error_message: e?.message ?? 'Could not switch network',
+      }))
+      captureServer('network_switch_failed', metricProps({
+        error_message: e?.message ?? 'Could not switch network',
+      }))
       setStatus('error'); setStatusMsg(e?.message ?? 'Could not switch network')
       return
     }
     setStatus('idle')
-  }, [wallet, exchange])
+  }, [wallet, exchange, posthog, metricProps, captureServer])
 
   // Get CLOB API credentials (L1 auth → API key)
   const ensureCreds = useCallback(async (walletClient: any): Promise<ApiCredentials | null> => {
@@ -255,6 +321,8 @@ export default function TradePanel({ bond, onClose }: Props) {
   // Approve USDC
   const handleApprove = useCallback(async () => {
     if (!wallet) return
+    posthog?.capture('usdc_approval_started', metricProps())
+    captureServer('usdc_approval_started', metricProps())
     setStatus('approving'); setStatusMsg('Approving USDC…')
     try {
       const provider = await wallet.getEthereumProvider()
@@ -263,23 +331,46 @@ export default function TradePanel({ bond, onClose }: Props) {
       const wc = createWalletClient({ chain: polygon, transport: custom(provider) })
       const result = await approveUsdc(wc, wallet.address, exchange)
       if (result.success) {
+        posthog?.capture('usdc_approval_succeeded', metricProps())
+        captureServer('usdc_approval_succeeded', metricProps())
         setStatusMsg('Approved! Refreshing…')
         // Wait a couple seconds for the tx to propagate then recheck
         setTimeout(() => {
           getUsdcAllowance(wallet.address, exchange).then(a => { setAllowance(a); setStatus('idle'); setStatusMsg('') })
         }, 3000)
       } else {
+        posthog?.capture('usdc_approval_failed', metricProps({
+          error_message: result.error ?? 'Approval failed',
+        }))
+        captureServer('usdc_approval_failed', metricProps({
+          error_message: result.error ?? 'Approval failed',
+        }))
         setStatus('error'); setStatusMsg(result.error ?? 'Approval failed')
       }
     } catch (e: any) {
+      posthog?.capture('usdc_approval_failed', metricProps({
+        error_message: e?.message ?? 'Approval failed',
+      }))
+      captureServer('usdc_approval_failed', metricProps({
+        error_message: e?.message ?? 'Approval failed',
+      }))
       setStatus('error'); setStatusMsg(e?.message ?? 'Approval failed')
     }
-  }, [wallet, exchange])
+  }, [wallet, exchange, posthog, metricProps, captureServer])
 
   // Place order
   const handleTrade = useCallback(async () => {
     if (!authenticated) { login(); return }
     if (!wallet || !tokenId || !preview) return
+    const tradeProps = metricProps({
+      token_id: tokenId,
+      shares: preview.shares,
+      avg_price: orderType === 'FOK' ? preview.avgPrice : parseFloat(limitPrice),
+      notional_usdc: tradeDir === 'BUY' ? parseFloat(amount || '0') : preview.totalCost,
+      price_impact: preview.priceImpact,
+    })
+    posthog?.capture('trade_submit_clicked', tradeProps)
+    captureServer('trade_submit_clicked', tradeProps)
     setStatus('loading'); setStatusMsg('')
     try {
       const provider = await wallet.getEthereumProvider()
@@ -308,6 +399,14 @@ export default function TradePanel({ bond, onClose }: Props) {
       })
 
       if (result.success) {
+        posthog?.capture('trade_succeeded', {
+          ...tradeProps,
+          order_id: result.orderId ?? null,
+        })
+        captureServer('trade_succeeded', {
+          ...tradeProps,
+          order_id: result.orderId ?? null,
+        })
         setStatus('success')
         setStatusMsg('Order placed!')
         setAmount('')
@@ -318,12 +417,28 @@ export default function TradePanel({ bond, onClose }: Props) {
         if (result.error?.includes('401') || result.error?.includes('auth') || result.error?.includes('key')) {
           clearCreds(wallet.address); setCreds(null)
         }
+        posthog?.capture('trade_failed', {
+          ...tradeProps,
+          error_message: result.error ?? 'Order failed',
+        })
+        captureServer('trade_failed', {
+          ...tradeProps,
+          error_message: result.error ?? 'Order failed',
+        })
         setStatus('error'); setStatusMsg(result.error ?? 'Order failed')
       }
     } catch (e: any) {
+      posthog?.capture('trade_failed', {
+        ...tradeProps,
+        error_message: e?.message ?? 'Unknown error',
+      })
+      captureServer('trade_failed', {
+        ...tradeProps,
+        error_message: e?.message ?? 'Unknown error',
+      })
       setStatus('error'); setStatusMsg(e?.message ?? 'Unknown error')
     }
-  }, [authenticated, login, wallet, tokenId, preview, orderType, limitPrice, tradeDir, bond.negRisk, exchange, ensureCreds, creds])
+  }, [authenticated, login, wallet, tokenId, preview, orderType, limitPrice, tradeDir, bond.negRisk, exchange, ensureCreds, creds, posthog, metricProps, captureServer, amount])
 
   const usdcNum           = parseFloat(amount || '0')
   const needsApproval     = tradeDir === 'BUY' && allowance !== null && usdcNum > allowance

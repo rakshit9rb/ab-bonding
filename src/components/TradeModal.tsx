@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { usePrivy, useWallets } from '@privy-io/react-auth'
+import { usePostHog } from 'posthog-js/react'
 import { createWalletClient, custom } from 'viem'
 import { polygon } from 'viem/chains'
 import { Bond } from '@/lib/bonds'
@@ -17,8 +18,9 @@ interface Props {
 type Outcome = 'YES' | 'NO'
 
 export default function TradeModal({ bond, onClose }: Props) {
-  const { ready, authenticated, login } = usePrivy()
+  const { ready, authenticated, login, user } = usePrivy()
   const { wallets } = useWallets()
+  const posthog = usePostHog()
 
   const [outcome, setOutcome] = useState<Outcome>('YES')
   const [orderType, setOrderType] = useState<OrderType>('FOK') // FOK = market order
@@ -32,6 +34,24 @@ export default function TradeModal({ bond, onClose }: Props) {
 
   const wallet = wallets[0]
   const tokenId = outcome === 'YES' ? bond.clobTokenIds?.[0] : bond.clobTokenIds?.[1]
+
+  const metricProps = useCallback((overrides: Record<string, unknown> = {}) => ({
+    user_id: user?.id ?? null,
+    wallet_address: wallet?.address ?? null,
+    bond_id: bond.id,
+    condition_id: bond.conditionId,
+    market_slug: bond.slug,
+    trade_dir: 'BUY',
+    outcome,
+    order_type: orderType,
+    neg_risk: bond.negRisk,
+    ...overrides,
+  }), [user?.id, wallet?.address, bond.id, bond.conditionId, bond.slug, outcome, orderType, bond.negRisk])
+
+  useEffect(() => {
+    if (!authenticated || !user?.id) return
+    posthog?.identify(user.id, { wallet_address: wallet?.address ?? null })
+  }, [authenticated, user?.id, wallet?.address, posthog])
 
   // Fetch order book
   useEffect(() => {
@@ -69,6 +89,14 @@ export default function TradeModal({ bond, onClose }: Props) {
 
     const usdc = parseFloat(amount)
     if (!preview || isNaN(usdc) || usdc <= 0) return
+    const tradeProps = metricProps({
+      token_id: tokenId,
+      shares: preview.shares,
+      avg_price: orderType === 'FOK' ? preview.avgPrice : parseFloat(limitPrice),
+      notional_usdc: usdc,
+      price_impact: preview.priceImpact,
+    })
+    posthog?.capture('trade_submit_clicked', tradeProps)
 
     setStatus('loading')
     setStatusMsg('')
@@ -91,19 +119,31 @@ export default function TradeModal({ bond, onClose }: Props) {
       })
 
       if (result.success) {
+        posthog?.capture('trade_succeeded', {
+          ...tradeProps,
+          order_id: result.orderId ?? null,
+        })
         setStatus('success')
         setStatusMsg(`Order placed! ID: ${result.orderId?.slice(0, 12)}…`)
         // Refresh balance
         getUsdcBalance(wallet.address).then(setUsdcBalance)
       } else {
+        posthog?.capture('trade_failed', {
+          ...tradeProps,
+          error_message: result.error ?? 'Order failed',
+        })
         setStatus('error')
         setStatusMsg(result.error ?? 'Order failed')
       }
     } catch (e: any) {
+      posthog?.capture('trade_failed', {
+        ...tradeProps,
+        error_message: e?.message ?? 'Unknown error',
+      })
       setStatus('error')
       setStatusMsg(e?.message ?? 'Unknown error')
     }
-  }, [authenticated, login, wallet, tokenId, amount, preview, orderType, limitPrice, bond.negRisk])
+  }, [authenticated, login, wallet, tokenId, amount, preview, orderType, limitPrice, bond.negRisk, posthog, metricProps])
 
   const insufficientBalance = usdcBalance !== null && parseFloat(amount || '0') > usdcBalance
   const bestYesPrice = book?.asks?.[0] ? parseFloat(book.asks[0].price) : null
