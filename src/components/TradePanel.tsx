@@ -28,8 +28,8 @@ function OrderBookDisplay({ book, outcome }: { book: OrderBook; outcome: Outcome
   const rawAsks = outcome === 'NO' ? invert(book.bids ?? []) : (book.asks ?? [])
   const rawBids = outcome === 'NO' ? invert(book.asks ?? []) : (book.bids ?? [])
 
-  const asks = [...rawAsks].slice(0, 8)
-  const bids = [...rawBids].reverse().slice(0, 8)
+  const asks = [...rawAsks].slice(-8)
+  const bids = [...rawBids].slice(-8).reverse()
   const maxSize = Math.max(...[...asks, ...bids].map(l => parseFloat(l.size) || 0), 1)
 
   return (
