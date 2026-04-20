@@ -102,6 +102,7 @@ export default function TradeModal({ bond, onClose }: Props) {
     setStatusMsg('')
 
     try {
+      await wallet.switchChain(137)
       const provider = await wallet.getEthereumProvider()
       const walletClient = createWalletClient({ chain: polygon, transport: custom(provider) })
 

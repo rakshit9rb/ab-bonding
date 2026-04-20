@@ -21,15 +21,10 @@ type TradeDir = 'BUY' | 'SELL'
 
 // ── Order Book Display ───────────────────────────────────────────────────────
 
-function OrderBookDisplay({ book, outcome }: { book: OrderBook; outcome: Outcome }) {
-  const invert = (lvls: { price: string; size: string }[]) =>
-    lvls.map(l => ({ price: String((1 - parseFloat(l.price)).toFixed(4)), size: l.size }))
-
-  const rawAsks = outcome === 'NO' ? invert(book.bids ?? []) : (book.asks ?? [])
-  const rawBids = outcome === 'NO' ? invert(book.asks ?? []) : (book.bids ?? [])
-
-  const asks = [...rawAsks].slice(0, 8)
-  const bids = [...rawBids].reverse().slice(0, 8)
+function OrderBookDisplay({ book }: { book: OrderBook }) {
+  // Always display the fetched token's own book — caller fetches correct token
+  const asks = [...(book.asks ?? [])].slice(0, 8)
+  const bids = [...(book.bids ?? [])].reverse().slice(0, 8)
   const maxSize = Math.max(...[...asks, ...bids].map(l => parseFloat(l.size) || 0), 1)
 
   return (
@@ -152,13 +147,11 @@ export default function TradePanel({ bond, onClose }: Props) {
   const tokenId     = outcome === 'YES' ? yesTokenId : bond.clobTokenIds?.[1]
   const exchange    = bond.negRisk ? NEG_RISK_CTF_EXCHANGE : CTF_EXCHANGE
 
-  // Derived best prices
-  const asksSorted  = book?.asks ?? []
-  const bidsSorted  = book?.bids ?? []
-  const rawBestAsk  = asksSorted.length ? parseFloat(asksSorted[asksSorted.length - 1].price) : null
-  const rawBestBid  = bidsSorted.length ? parseFloat(bidsSorted[bidsSorted.length - 1].price) : null
-  const bestAsk     = outcome === 'NO' && rawBestBid != null ? 1 - rawBestBid : rawBestAsk
-  const bestBid     = outcome === 'NO' && rawBestAsk != null ? 1 - rawBestAsk : rawBestBid
+  // Derived best prices — from the currently-fetched token's book
+  const asks        = book?.asks ?? []
+  const bids        = book?.bids ?? []
+  const bestAsk     = asks.length ? parseFloat(asks[asks.length - 1].price) : null
+  const bestBid     = bids.length ? parseFloat(bids[bids.length - 1].price) : null
   const lastPrice   = book?.last_trade_price ? parseFloat(book.last_trade_price) : null
   const midPrice    = lastPrice ?? (bestAsk && bestBid ? (bestAsk + bestBid) / 2 : bond.price)
 
@@ -199,18 +192,20 @@ export default function TradePanel({ bond, onClose }: Props) {
     posthog?.identify(user.id, { wallet_address: wallet?.address ?? null })
   }, [authenticated, user?.id, wallet?.address, posthog])
 
-  // Order book polling every 2s
+  // Order book polling every 2s — re-fetch when outcome changes (YES vs NO token)
   useEffect(() => {
-    if (!yesTokenId) return
+    console.log('[TradePanel] tokenId changed:', outcome, tokenId, 'clobTokenIds:', bond.clobTokenIds)
+    if (!tokenId) return
+    setBook(null)
     const load = () =>
-      fetch(`${CLOB_URL}/book?token_id=${yesTokenId}`)
+      fetch(`${CLOB_URL}/book?token_id=${tokenId}`)
         .then(r => r.ok ? r.json() : null)
         .then(d => d && setBook(d))
         .catch(() => {})
     load()
     const id = setInterval(load, 2000)
     return () => clearInterval(id)
-  }, [yesTokenId])
+  }, [tokenId])
 
   // Chain + balance + allowance when wallet connects
   useEffect(() => {
@@ -460,7 +455,7 @@ export default function TradePanel({ bond, onClose }: Props) {
             </div>
           </div>
           {book
-            ? <OrderBookDisplay book={book} outcome={outcome} />
+            ? <OrderBookDisplay book={book} />
             : <div className="flex items-center justify-center h-32 text-[13px]" style={{ color: '#4b5563' }}>Loading order book…</div>
           }
           <div className="flex items-center gap-4 mt-3 pt-3 text-[12px]" style={{ borderTop: '1px solid #1f2937', color: '#4b5563' }}>
@@ -544,7 +539,7 @@ export default function TradePanel({ bond, onClose }: Props) {
                   border:     `1px solid ${outcome === o ? (o === 'YES' ? 'rgba(5,150,80,0.6)' : 'rgba(220,38,38,0.5)') : '#1f2937'}`,
                   color:      outcome === o ? (o === 'YES' ? '#4ade80' : '#f87171') : '#4b5563',
                 }}>
-                {o} {o === 'YES' && bestAsk ? `${(bestAsk * 100).toFixed(0)}¢` : o === 'NO' && bestBid ? `${((1 - bestBid) * 100).toFixed(0)}¢` : ''}
+                {o} {bestAsk && outcome === o ? `${(bestAsk * 100).toFixed(0)}¢` : ''}
               </button>
             ))}
           </div>
