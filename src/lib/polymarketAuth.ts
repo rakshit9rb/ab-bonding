@@ -31,7 +31,10 @@ function saveCreds(c: ApiCredentials) {
 }
 
 // L1: sign EIP-712 ClobAuth message to create API key
-async function createApiKey(walletClient: any, address: string): Promise<ApiCredentials | null> {
+async function createApiKey(
+  walletClient: any,
+  address: string,
+): Promise<ApiCredentials | null> {
   try {
     const nonceRes = await fetch(`${CLOB_URL}/auth/nonce`);
     if (!nonceRes.ok) return null;
@@ -115,7 +118,11 @@ async function hmacBase64(secret: string, message: string): Promise<string> {
     false,
     ["sign"],
   );
-  const sig = await crypto.subtle.sign("HMAC", key, toArrayBuffer(enc.encode(message)));
+  const sig = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    toArrayBuffer(enc.encode(message)),
+  );
   return btoa(
     Array.from(new Uint8Array(sig))
       .map((b) => String.fromCharCode(b))
@@ -131,7 +138,10 @@ export async function buildL2Headers(
   body = "",
 ): Promise<Record<string, string>> {
   const ts = Math.floor(Date.now() / 1000).toString();
-  const sig = await hmacBase64(creds.secret, ts + method.toUpperCase() + path + body);
+  const sig = await hmacBase64(
+    creds.secret,
+    ts + method.toUpperCase() + path + body,
+  );
   return {
     POLY_ADDRESS: creds.address,
     POLY_API_KEY: creds.apiKey,

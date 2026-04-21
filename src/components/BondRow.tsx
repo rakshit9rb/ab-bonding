@@ -86,13 +86,22 @@ export default memo(function BondRow({ bond, index, pinned }: Props) {
 
           {/* Mobile stats */}
           <div className="flex items-center gap-4 md:hidden pl-7">
-            <span className="text-[14px] font-bold tabular-nums" style={{ color: "var(--green)" }}>
+            <span
+              className="text-[14px] font-bold tabular-nums"
+              style={{ color: "var(--green)" }}
+            >
               {probPct}%
             </span>
-            <span className="text-[14px] font-bold tabular-nums" style={{ color: "var(--green)" }}>
+            <span
+              className="text-[14px] font-bold tabular-nums"
+              style={{ color: "var(--green)" }}
+            >
               {fmtGain(bond.price)}
             </span>
-            <span className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
+            <span
+              className="text-[13px]"
+              style={{ color: "var(--text-secondary)" }}
+            >
               {label}
             </span>
             <button
@@ -106,12 +115,18 @@ export default memo(function BondRow({ bond, index, pinned }: Props) {
 
           {/* Desktop columns */}
           <div className="hidden md:flex items-center">
-            <span className="text-[15px] font-bold tabular-nums" style={{ color: "var(--green)" }}>
+            <span
+              className="text-[15px] font-bold tabular-nums"
+              style={{ color: "var(--green)" }}
+            >
               {probPct}%
             </span>
           </div>
           <div className="hidden md:flex items-center">
-            <span className="text-[15px] font-bold tabular-nums" style={{ color: "var(--green)" }}>
+            <span
+              className="text-[15px] font-bold tabular-nums"
+              style={{ color: "var(--green)" }}
+            >
               {fmtGain(bond.price)}
             </span>
           </div>
@@ -124,12 +139,18 @@ export default memo(function BondRow({ bond, index, pinned }: Props) {
             </span>
           </div>
           <div className="hidden md:flex items-center justify-end">
-            <span className="text-[14px] tabular-nums" style={{ color: "var(--text-tertiary)" }}>
+            <span
+              className="text-[14px] tabular-nums"
+              style={{ color: "var(--text-tertiary)" }}
+            >
               {fmtVolume(bond.volume)}
             </span>
           </div>
           <div className="hidden md:flex items-center justify-end">
-            <span className="text-[14px] tabular-nums" style={{ color: "var(--text-tertiary)" }}>
+            <span
+              className="text-[14px] tabular-nums"
+              style={{ color: "var(--text-tertiary)" }}
+            >
               {fmtVolume(bond.liquidity)}
             </span>
           </div>

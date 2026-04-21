@@ -61,7 +61,10 @@ function fmtDate(ts: number) {
 function PnlBadge({ value, pct }: { value: number; pct?: number }) {
   const pos = value >= 0;
   return (
-    <span className="font-mono font-semibold" style={{ color: pos ? "#4ade80" : "#f87171" }}>
+    <span
+      className="font-mono font-semibold"
+      style={{ color: pos ? "#4ade80" : "#f87171" }}
+    >
       {fmt$(value)}
       {pct != null ? ` (${fmtPct(pct)})` : ""}
     </span>
@@ -84,7 +87,9 @@ function FundsPanel({
   const [copied, setCopied] = useState(false);
   const [withdrawTo, setWithdrawTo] = useState("");
   const [withdrawAmt, setWithdrawAmt] = useState("");
-  const [txStatus, setTxStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [txStatus, setTxStatus] = useState<
+    "idle" | "loading" | "success" | "error"
+  >("idle");
   const [txMsg, setTxMsg] = useState("");
 
   const copy = () => {
@@ -155,7 +160,8 @@ function FundsPanel({
               background: "none",
               border: "none",
               color: tab === t ? "#e5e7eb" : "#4b5563",
-              borderBottom: tab === t ? "2px solid #4ade80" : "2px solid transparent",
+              borderBottom:
+                tab === t ? "2px solid #4ade80" : "2px solid transparent",
               marginBottom: "-1px",
             }}
           >
@@ -195,7 +201,9 @@ function FundsPanel({
                 onClick={copy}
                 className="px-4 py-2.5 rounded-lg text-[13px] font-semibold cursor-pointer shrink-0 transition-all"
                 style={{
-                  background: copied ? "rgba(5,150,80,0.15)" : "rgba(255,255,255,0.05)",
+                  background: copied
+                    ? "rgba(5,150,80,0.15)"
+                    : "rgba(255,255,255,0.05)",
                   border: `1px solid ${copied ? "rgba(5,150,80,0.3)" : "#374151"}`,
                   color: copied ? "#4ade80" : "#9ca3af",
                 }}
@@ -205,7 +213,8 @@ function FundsPanel({
             </div>
             <p className="text-[12px]" style={{ color: "#4b5563" }}>
               Send <strong style={{ color: "#6b7280" }}>USDC.e</strong> on{" "}
-              <strong style={{ color: "#6b7280" }}>Polygon</strong> only to this address.
+              <strong style={{ color: "#6b7280" }}>Polygon</strong> only to this
+              address.
             </p>
           </>
         ) : (
@@ -215,8 +224,14 @@ function FundsPanel({
                 Send USDC.e to another address
               </span>
               {usdcBalance !== null && (
-                <span className="text-[12px] font-mono" style={{ color: "#6b7280" }}>
-                  Available: <span style={{ color: "#9ca3af" }}>${usdcBalance.toFixed(2)}</span>
+                <span
+                  className="text-[12px] font-mono"
+                  style={{ color: "#6b7280" }}
+                >
+                  Available:{" "}
+                  <span style={{ color: "#9ca3af" }}>
+                    ${usdcBalance.toFixed(2)}
+                  </span>
                 </span>
               )}
             </div>
@@ -265,7 +280,9 @@ function FundsPanel({
                   className="text-[12px] px-3 py-2 rounded-lg"
                   style={{
                     background:
-                      txStatus === "success" ? "rgba(5,150,80,0.1)" : "rgba(220,38,38,0.1)",
+                      txStatus === "success"
+                        ? "rgba(5,150,80,0.1)"
+                        : "rgba(220,38,38,0.1)",
                     color: txStatus === "success" ? "#4ade80" : "#f87171",
                   }}
                 >
@@ -324,7 +341,10 @@ function SummaryBar({ positions }: { positions: Position[] }) {
           >
             {s.label}
           </div>
-          <div className="text-[22px] font-bold font-mono leading-none" style={{ color: s.color }}>
+          <div
+            className="text-[22px] font-bold font-mono leading-none"
+            style={{ color: s.color }}
+          >
             {s.value}
           </div>
         </div>
@@ -339,7 +359,10 @@ function PositionsTable({ positions }: { positions: Position[] }) {
   if (positions.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-40 gap-2">
-        <span className="text-[16px] font-semibold" style={{ color: "var(--text-secondary)" }}>
+        <span
+          className="text-[16px] font-semibold"
+          style={{ color: "var(--text-secondary)" }}
+        >
           No open positions
         </span>
         <span className="text-[14px]" style={{ color: "var(--text-tertiary)" }}>
@@ -351,7 +374,10 @@ function PositionsTable({ positions }: { positions: Position[] }) {
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-[13px]" style={{ borderCollapse: "collapse" }}>
+      <table
+        className="w-full text-[13px]"
+        style={{ borderCollapse: "collapse" }}
+      >
         <thead>
           <tr
             className="text-[11px] font-semibold uppercase tracking-wider"
@@ -384,10 +410,15 @@ function PositionsTable({ positions }: { positions: Position[] }) {
                   className="text-[13px] font-medium hover:underline"
                   style={{ color: "var(--text)", textDecoration: "none" }}
                 >
-                  <span className="line-clamp-2 max-w-[280px] block">{p.title}</span>
+                  <span className="line-clamp-2 max-w-[280px] block">
+                    {p.title}
+                  </span>
                 </a>
                 {p.redeemable && (
-                  <span className="text-[11px] mt-0.5 block" style={{ color: "#fbbf24" }}>
+                  <span
+                    className="text-[11px] mt-0.5 block"
+                    style={{ color: "#fbbf24" }}
+                  >
                     Redeemable
                   </span>
                 )}
@@ -401,7 +432,9 @@ function PositionsTable({ positions }: { positions: Position[] }) {
                         ? "rgba(5,150,80,0.15)"
                         : "rgba(220,38,38,0.1)",
                     color:
-                      p.outcome.toLowerCase() === "yes" || p.curPrice > 0.5 ? "#4ade80" : "#f87171",
+                      p.outcome.toLowerCase() === "yes" || p.curPrice > 0.5
+                        ? "#4ade80"
+                        : "#f87171",
                   }}
                 >
                   {p.outcome}
@@ -419,10 +452,16 @@ function PositionsTable({ positions }: { positions: Position[] }) {
               >
                 {p.avgPrice > 0 ? (p.avgPrice * 100).toFixed(1) + "¢" : "—"}
               </td>
-              <td className="py-3 px-3 text-right font-mono" style={{ color: "var(--text)" }}>
+              <td
+                className="py-3 px-3 text-right font-mono"
+                style={{ color: "var(--text)" }}
+              >
                 {(p.curPrice * 100).toFixed(1)}¢
               </td>
-              <td className="py-3 px-3 text-right font-mono" style={{ color: "var(--text)" }}>
+              <td
+                className="py-3 px-3 text-right font-mono"
+                style={{ color: "var(--text)" }}
+              >
                 {fmt$(p.currentValue)}
               </td>
               <td className="py-3 px-3 text-right">
@@ -494,7 +533,10 @@ function ActivityTable({ address }: { address: string }) {
   if (!loading && activity.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-40 gap-2">
-        <span className="text-[16px] font-semibold" style={{ color: "var(--text-secondary)" }}>
+        <span
+          className="text-[16px] font-semibold"
+          style={{ color: "var(--text-secondary)" }}
+        >
           No trade history
         </span>
         <span className="text-[14px]" style={{ color: "var(--text-tertiary)" }}>
@@ -507,7 +549,10 @@ function ActivityTable({ address }: { address: string }) {
   return (
     <div>
       <div className="overflow-x-auto">
-        <table className="w-full text-[13px]" style={{ borderCollapse: "collapse" }}>
+        <table
+          className="w-full text-[13px]"
+          style={{ borderCollapse: "collapse" }}
+        >
           <thead>
             <tr
               className="text-[11px] font-semibold uppercase tracking-wider"
@@ -525,10 +570,14 @@ function ActivityTable({ address }: { address: string }) {
           <tbody>
             {activity.map((a, i) => {
               const isBuy = a.side?.toUpperCase() === "BUY";
-              const isWon = a.type === "REDEEM" || a.outcome?.toLowerCase() === "won";
+              const isWon =
+                a.type === "REDEEM" || a.outcome?.toLowerCase() === "won";
               const isLost = a.outcome?.toLowerCase() === "lost";
               return (
-                <tr key={a.id ?? i} style={{ borderBottom: "1px solid #1f2937" }}>
+                <tr
+                  key={a.id ?? i}
+                  style={{ borderBottom: "1px solid #1f2937" }}
+                >
                   <td
                     className="py-3 pr-4 font-mono text-[12px] whitespace-nowrap"
                     style={{ color: "#6b7280" }}
@@ -547,7 +596,9 @@ function ActivityTable({ address }: { address: string }) {
                     <span
                       className="px-2 py-0.5 rounded text-[11px] font-semibold"
                       style={{
-                        background: isBuy ? "rgba(5,150,80,0.15)" : "rgba(220,38,38,0.1)",
+                        background: isBuy
+                          ? "rgba(5,150,80,0.15)"
+                          : "rgba(220,38,38,0.1)",
                         color: isBuy ? "#4ade80" : "#f87171",
                       }}
                     >
@@ -556,15 +607,24 @@ function ActivityTable({ address }: { address: string }) {
                   </td>
                   <td className="py-3 px-3 text-right">
                     {isWon ? (
-                      <span style={{ color: "#4ade80" }} className="font-semibold text-[12px]">
+                      <span
+                        style={{ color: "#4ade80" }}
+                        className="font-semibold text-[12px]"
+                      >
                         Won ✓
                       </span>
                     ) : isLost ? (
-                      <span style={{ color: "#f87171" }} className="font-semibold text-[12px]">
+                      <span
+                        style={{ color: "#f87171" }}
+                        className="font-semibold text-[12px]"
+                      >
                         Lost ✗
                       </span>
                     ) : (
-                      <span style={{ color: "#9ca3af" }} className="text-[12px]">
+                      <span
+                        style={{ color: "#9ca3af" }}
+                        className="text-[12px]"
+                      >
                         {a.outcome ?? "—"}
                       </span>
                     )}
@@ -633,7 +693,9 @@ export default function Portfolio() {
   useEffect(() => {
     if (!address) return;
     setLoading(true);
-    fetch(`https://data-api.polymarket.com/positions?user=${address.toLowerCase()}`)
+    fetch(
+      `https://data-api.polymarket.com/positions?user=${address.toLowerCase()}`,
+    )
       .then((r) => r.json())
       .then((data: Position[]) => setPositions(Array.isArray(data) ? data : []))
       .catch(() => setPositions([]))
@@ -655,8 +717,16 @@ export default function Portfolio() {
         <div className="max-w-[1200px] mx-auto flex items-center justify-between px-4 md:px-8 h-14 md:h-16">
           <div className="flex items-center gap-4 md:gap-6">
             <a href="/" className="flex items-center gap-2 no-underline">
-              <img src="/light.svg" alt="OnlyBonds" className="theme-logo-light h-5 md:h-7" />
-              <img src="/dark.svg" alt="OnlyBonds" className="theme-logo-dark h-5 md:h-7" />
+              <img
+                src="/light.svg"
+                alt="OnlyBonds"
+                className="theme-logo-light h-5 md:h-7"
+              />
+              <img
+                src="/dark.svg"
+                alt="OnlyBonds"
+                className="theme-logo-dark h-5 md:h-7"
+              />
             </a>
             <a
               href="/portfolio"
@@ -684,7 +754,10 @@ export default function Portfolio() {
         >
           Portfolio
         </h1>
-        <p className="text-[15px] mb-8" style={{ color: "var(--text-secondary)" }}>
+        <p
+          className="text-[15px] mb-8"
+          style={{ color: "var(--text-secondary)" }}
+        >
           Your Polymarket positions and trade history.
         </p>
 
@@ -693,7 +766,10 @@ export default function Portfolio() {
             className="flex flex-col items-center justify-center h-64 gap-4 rounded-2xl"
             style={{ background: "#161b22", border: "1px solid #1f2937" }}
           >
-            <p className="text-[16px] font-semibold" style={{ color: "var(--text-secondary)" }}>
+            <p
+              className="text-[16px] font-semibold"
+              style={{ color: "var(--text-secondary)" }}
+            >
               Connect your wallet to view your portfolio
             </p>
             <button
@@ -713,12 +789,17 @@ export default function Portfolio() {
             <FundsPanel
               address={address ?? ""}
               usdcBalance={usdcBalance}
-              onBalanceRefresh={() => address && getUsdcBalance(address).then(setUsdcBalance)}
+              onBalanceRefresh={() =>
+                address && getUsdcBalance(address).then(setUsdcBalance)
+              }
             />
             <SummaryBar positions={positions} />
 
             {/* Tabs */}
-            <div className="flex gap-6 mb-6" style={{ borderBottom: "1px solid #1f2937" }}>
+            <div
+              className="flex gap-6 mb-6"
+              style={{ borderBottom: "1px solid #1f2937" }}
+            >
               {(
                 [
                   { v: "positions", l: "Positions" },
@@ -734,7 +815,10 @@ export default function Portfolio() {
                     border: "none",
                     padding: "0 0 12px",
                     color: tab === t.v ? "var(--text)" : "var(--text-tertiary)",
-                    borderBottom: tab === t.v ? "2px solid var(--accent)" : "2px solid transparent",
+                    borderBottom:
+                      tab === t.v
+                        ? "2px solid var(--accent)"
+                        : "2px solid transparent",
                     marginBottom: "-1px",
                   }}
                 >
