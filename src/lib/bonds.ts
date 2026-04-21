@@ -14,13 +14,7 @@ export interface Bond {
 }
 
 export type TimeFilter = "all" | "hours" | "today" | "week" | "month";
-export type SortKey =
-  | "gain"
-  | "apy"
-  | "prob"
-  | "expiry"
-  | "volume"
-  | "liquidity";
+export type SortKey = "gain" | "apy" | "prob" | "expiry" | "volume" | "liquidity";
 export type TimeLeft = "any" | "1h" | "6h" | "12h" | "24h" | "7d";
 
 const GAMMA = "https://gamma-api.polymarket.com";
@@ -104,11 +98,7 @@ function getCategory(m: Record<string, unknown>): string {
     }
     return "";
   })();
-  if (
-    apiCat &&
-    apiCat.toLowerCase() !== "other" &&
-    apiCat.toLowerCase() !== "unknown"
-  ) {
+  if (apiCat && apiCat.toLowerCase() !== "other" && apiCat.toLowerCase() !== "unknown") {
     return apiCat;
   }
 
@@ -173,9 +163,7 @@ export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
   for (const result of results) {
     if (result.status !== "fulfilled") continue;
     const data = result.value;
-    const page: Record<string, unknown>[] = Array.isArray(data)
-      ? data
-      : (data.markets ?? []);
+    const page: Record<string, unknown>[] = Array.isArray(data) ? data : (data.markets ?? []);
     for (const m of page) {
       const id = String(m.conditionId || m.id || "");
       if (!id || seen.has(id)) continue;
@@ -215,9 +203,7 @@ export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
     try {
       const raw_ids = m.clobTokenIds;
       const ids: string[] =
-        typeof raw_ids === "string"
-          ? JSON.parse(raw_ids)
-          : ((raw_ids as string[]) ?? []);
+        typeof raw_ids === "string" ? JSON.parse(raw_ids) : ((raw_ids as string[]) ?? []);
       if (ids[0] && ids[1]) clobTokenIds = [ids[0], ids[1]];
       else if (ids[0]) clobTokenIds = [ids[0], ids[0]];
     } catch {}
@@ -228,9 +214,7 @@ export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
       conditionId,
       question: String(m.question || m.title || "Unknown"),
       slug: String(
-        (Array.isArray(m.events) && m.events.length > 0
-          ? (m.events as any[])[0]?.slug
-          : null) ||
+        (Array.isArray(m.events) && m.events.length > 0 ? (m.events as any[])[0]?.slug : null) ||
           m.slug ||
           m.conditionId ||
           "",
@@ -251,10 +235,7 @@ export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
   // Enrich liquidity from CLOB order book — only top 100 markets by volume
   // to avoid hundreds of outbound requests slowing the response
   const topTokenIds = Array.from(tokenIdToIdx.keys())
-    .sort(
-      (a, b) =>
-        bonds[tokenIdToIdx.get(b)!].volume - bonds[tokenIdToIdx.get(a)!].volume,
-    )
+    .sort((a, b) => bonds[tokenIdToIdx.get(b)!].volume - bonds[tokenIdToIdx.get(a)!].volume)
     .slice(0, 100);
   const topTokenIdSet = new Set(topTokenIds);
   for (const id of Array.from(tokenIdToIdx.keys())) {
@@ -278,9 +259,7 @@ export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
       const result = clobResults[i];
       if (result.status !== "fulfilled" || !result.value) continue;
       const book = result.value;
-      const asks: { price: string; size: string }[] = Array.isArray(book.asks)
-        ? book.asks
-        : [];
+      const asks: { price: string; size: string }[] = Array.isArray(book.asks) ? book.asks : [];
       const liquidity = asks.reduce((sum, ask) => {
         const p = parseFloat(ask.price);
         const s = parseFloat(ask.size);
@@ -305,8 +284,7 @@ export function splitPinned(
   const regular: Bond[] = [];
   for (const b of bonds) {
     const title = b.question.toLowerCase();
-    if (pinnedMatches.some((m) => title.includes(m.toLowerCase())))
-      pinned.push(b);
+    if (pinnedMatches.some((m) => title.includes(m.toLowerCase()))) pinned.push(b);
     else regular.push(b);
   }
   return { pinned, regular };
@@ -339,8 +317,7 @@ export function applyFilters(
 
   let filtered = bonds.filter((b) => {
     if (catFilter !== "all" && b.category !== catFilter) return false;
-    if (includedCats.length > 0 && !includedCats.includes(b.category))
-      return false;
+    if (includedCats.length > 0 && !includedCats.includes(b.category)) return false;
     if (excludedCats.includes(b.category)) return false;
     if (minLiquidity > 0 && b.liquidity < minLiquidity) return false;
     const end = new Date(b.endDate);
@@ -351,8 +328,7 @@ export function applyFilters(
     }
     if (timeFilter === "all") return true;
     if (timeFilter === "hours") return hours >= 0 && hours <= 24;
-    if (timeFilter === "today")
-      return end.toDateString() === now.toDateString();
+    if (timeFilter === "today") return end.toDateString() === now.toDateString();
     if (timeFilter === "week") return days >= 0 && days <= 7;
     if (timeFilter === "month") return days >= 0 && days <= 31;
     return true;
@@ -360,14 +336,11 @@ export function applyFilters(
 
   const dir = sortAsc ? 1 : -1;
   filtered.sort((a, b) => {
-    if (sort === "gain")
-      return dir * ((1 - a.price) / a.price - (1 - b.price) / b.price);
+    if (sort === "gain") return dir * ((1 - a.price) / a.price - (1 - b.price) / b.price);
     if (sort === "apy") return dir * ((a.apy ?? 0) - (b.apy ?? 0));
     if (sort === "prob") return dir * (a.price - b.price);
     if (sort === "expiry")
-      return (
-        dir * (new Date(a.endDate).getTime() - new Date(b.endDate).getTime())
-      );
+      return dir * (new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
     if (sort === "volume") return dir * (a.volume - b.volume);
     if (sort === "liquidity") return dir * (a.liquidity - b.liquidity);
     return 0;
@@ -402,26 +375,20 @@ export function fmtExpiry(endDateStr: string): {
   const end = new Date(endDateStr);
   if (isNaN(end.getTime())) return { label: "—", urgency: "normal" };
   // Polymarket uses 2026-12-31 as a placeholder for "no fixed end date"
-  if (endDateStr.startsWith("2026-12-31"))
-    return { label: "—", urgency: "normal" };
+  if (endDateStr.startsWith("2026-12-31")) return { label: "—", urgency: "normal" };
   const now = new Date();
   const hours = (end.getTime() - now.getTime()) / 3600000;
   const days = Math.floor(hours / 24);
 
   if (hours < 0) return { label: "Expired", urgency: "critical" };
   if (hours < 1 / 60) return { label: "< 1m left", urgency: "critical" };
-  if (hours < 1)
-    return { label: `${Math.round(hours * 60)}m left`, urgency: "critical" };
-  if (hours < 24)
-    return { label: `${Math.round(hours)}h left`, urgency: "critical" };
+  if (hours < 1) return { label: `${Math.round(hours * 60)}m left`, urgency: "critical" };
+  if (hours < 24) return { label: `${Math.round(hours)}h left`, urgency: "critical" };
   if (days < 7) return { label: `${Math.round(hours)}h left`, urgency: "soon" };
   return { label: `${days}d left`, urgency: "normal" };
 }
 
 export function getCategories(bonds: Bond[]): string[] {
   const cats = Array.from(new Set(bonds.map((b) => b.category))).sort();
-  return [
-    ...cats.filter((c) => c !== "Other"),
-    ...cats.filter((c) => c === "Other"),
-  ];
+  return [...cats.filter((c) => c !== "Other"), ...cats.filter((c) => c === "Other")];
 }

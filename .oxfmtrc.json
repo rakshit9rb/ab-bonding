@@ -1,8 +1,8 @@
 {
-	"$schema": "./node_modules/oxfmt/configuration_schema.json",
-	"endOfLine": "lf",
-	"ignorePatterns": [".next/**", "coverage/**", "out/**"],
-	"insertFinalNewline": true,
-	"tabWidth": 2,
-	"useTabs": false
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "endOfLine": "lf",
+  "ignorePatterns": [".next/**", "coverage/**", "out/**"],
+  "insertFinalNewline": true,
+  "tabWidth": 2,
+  "useTabs": false
 }

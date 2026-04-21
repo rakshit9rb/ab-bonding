@@ -12,28 +12,19 @@ export function isTheme(value: string | null | undefined): value is ThemeName {
 }
 
 export function getSystemTheme(): ThemeName {
-  if (
-    typeof window === "undefined" ||
-    typeof window.matchMedia !== "function"
-  ) {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
     return "light";
   }
-  return window.matchMedia("(prefers-color-scheme: dark)").matches
-    ? "dark"
-    : "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-export function getThemePreference(
-  root: HTMLElement | null = getThemeRoot(),
-): ThemeName | null {
+export function getThemePreference(root: HTMLElement | null = getThemeRoot()): ThemeName | null {
   if (!root) return null;
   const theme = root.dataset.theme;
   return isTheme(theme) ? theme : null;
 }
 
-export function getResolvedTheme(
-  root: HTMLElement | null = getThemeRoot(),
-): ThemeName {
+export function getResolvedTheme(root: HTMLElement | null = getThemeRoot()): ThemeName {
   return getThemePreference(root) ?? getSystemTheme();
 }
 

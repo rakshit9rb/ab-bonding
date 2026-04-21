@@ -4,10 +4,7 @@ import { fetchBonds } from "@/lib/bonds";
 export const revalidate = 60;
 
 // In-memory cache — survives across requests in the same server process
-const cache = new Map<
-  number,
-  { bonds: Awaited<ReturnType<typeof fetchBonds>>; at: number }
->();
+const cache = new Map<number, { bonds: Awaited<ReturnType<typeof fetchBonds>>; at: number }>();
 const CACHE_TTL = 60_000; // 60s
 
 export async function GET(request: Request) {
@@ -29,9 +26,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ bonds, fetchedAt: new Date().toISOString() });
   } catch (err) {
     console.error("Failed to fetch bonds:", err);
-    return NextResponse.json(
-      { error: "Failed to fetch markets" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Failed to fetch markets" }, { status: 500 });
   }
 }

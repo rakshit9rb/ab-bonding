@@ -133,17 +133,11 @@ function PortfolioNavLink() {
       className="flex flex-col items-end no-underline leading-tight"
       style={{ textDecoration: "none" }}
     >
-      <span
-        className="text-[14px] font-semibold"
-        style={{ color: "var(--accent)" }}
-      >
+      <span className="text-[14px] font-semibold" style={{ color: "var(--accent)" }}>
         Portfolio
       </span>
       {authenticated && balance !== null && (
-        <span
-          className="text-[13px] font-bold font-mono"
-          style={{ color: "#4ade80" }}
-        >
+        <span className="text-[13px] font-bold font-mono" style={{ color: "#4ade80" }}>
           ${balance.toFixed(2)}
         </span>
       )}
@@ -166,8 +160,7 @@ function AuthButton() {
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node))
-        setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -219,10 +212,7 @@ function AuthButton() {
           color: "var(--text-secondary)",
         }}
       >
-        <span
-          className="w-2 h-2 rounded-full"
-          style={{ background: "#4ade80", flexShrink: 0 }}
-        />
+        <span className="w-2 h-2 rounded-full" style={{ background: "#4ade80", flexShrink: 0 }} />
         {label}
         <span style={{ color: "var(--text-tertiary)", fontSize: 10 }}>▾</span>
       </button>
@@ -236,10 +226,7 @@ function AuthButton() {
           }}
         >
           {/* Balance hero */}
-          <div
-            className="px-5 pt-5 pb-4"
-            style={{ borderBottom: "1px solid var(--border)" }}
-          >
+          <div className="px-5 pt-5 pb-4" style={{ borderBottom: "1px solid var(--border)" }}>
             <div
               className="text-[11px] font-semibold uppercase tracking-widest mb-1"
               style={{ color: "var(--text-tertiary)" }}
@@ -252,19 +239,13 @@ function AuthButton() {
             >
               {balance !== null ? `$${balance.toFixed(2)}` : "—"}
             </div>
-            <div
-              className="text-[12px]"
-              style={{ color: "var(--text-tertiary)" }}
-            >
+            <div className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
               on Polygon
             </div>
           </div>
 
           {/* Deposit address */}
-          <div
-            className="px-5 py-4"
-            style={{ borderBottom: "1px solid var(--border)" }}
-          >
+          <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--border)" }}>
             <div
               className="text-[11px] font-semibold uppercase tracking-widest mb-2"
               style={{ color: "var(--text-tertiary)" }}
@@ -283,9 +264,7 @@ function AuthButton() {
                   onClick={copy}
                   className="w-full py-2 rounded-xl text-[13px] font-semibold cursor-pointer transition-all"
                   style={{
-                    background: copied
-                      ? "rgba(5,150,80,0.12)"
-                      : "var(--surface-secondary)",
+                    background: copied ? "rgba(5,150,80,0.12)" : "var(--surface-secondary)",
                     border: `1px solid ${copied ? "rgba(5,150,80,0.3)" : "var(--border)"}`,
                     color: copied ? "#4ade80" : "var(--text-secondary)",
                   }}
@@ -296,22 +275,12 @@ function AuthButton() {
                   className="text-[11px] mt-2 text-center leading-relaxed"
                   style={{ color: "var(--text-tertiary)" }}
                 >
-                  Send{" "}
-                  <strong style={{ color: "var(--text-secondary)" }}>
-                    USDC.e
-                  </strong>{" "}
-                  on{" "}
-                  <strong style={{ color: "var(--text-secondary)" }}>
-                    Polygon
-                  </strong>{" "}
-                  only
+                  Send <strong style={{ color: "var(--text-secondary)" }}>USDC.e</strong> on{" "}
+                  <strong style={{ color: "var(--text-secondary)" }}>Polygon</strong> only
                 </p>
               </>
             ) : (
-              <p
-                className="text-[13px]"
-                style={{ color: "var(--text-tertiary)" }}
-              >
+              <p className="text-[13px]" style={{ color: "var(--text-tertiary)" }}>
                 Loading wallet…
               </p>
             )}
@@ -358,9 +327,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
   const [error, setError] = useState<string | null>(null);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
   const [catFilter, setCatFilter] = useState("all");
-  const [catModes, setCatModes] = useState<Map<string, "include" | "exclude">>(
-    new Map(),
-  );
+  const [catModes, setCatModes] = useState<Map<string, "include" | "exclude">>(new Map());
   const [sort, setSort] = useState<SortKey>("gain");
   const [sortAsc, setSortAsc] = useState(false);
   const [minLiquidity, setMinLiquidity] = useState(0);
@@ -417,8 +384,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
   }, [loadDisputes]);
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (filterRef.current && !filterRef.current.contains(e.target as Node))
-        setShowFilter(false);
+      if (filterRef.current && !filterRef.current.contains(e.target as Node)) setShowFilter(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -437,16 +403,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
         timeLeft,
         sortAsc,
       ),
-    [
-      allBonds,
-      timeFilter,
-      catFilter,
-      catModes,
-      sort,
-      minLiquidity,
-      timeLeft,
-      sortAsc,
-    ],
+    [allBonds, timeFilter, catFilter, catModes, sort, minLiquidity, timeLeft, sortAsc],
   );
   const { pinned: pinnedRows, regular: regularRows } = useMemo(
     () => splitPinned(displayed, PINNED_MARKETS),
@@ -500,8 +457,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
         {
           label: "Expiring Today",
           value: disputes.filter(
-            (b) =>
-              new Date(b.endDate).toDateString() === new Date().toDateString(),
+            (b) => new Date(b.endDate).toDateString() === new Date().toDateString(),
           ).length,
           color: "var(--text)",
         },
@@ -533,25 +489,10 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
       >
         <div className="max-w-[1200px] mx-auto flex items-center justify-between px-4 md:px-8 h-14 md:h-16">
           <div className="flex items-center gap-2 md:gap-2.5">
-            <img
-              src="/light.svg"
-              alt="OnlyBonds"
-              className="theme-logo-light h-5 md:h-7"
-            />
-            <img
-              src="/dark.svg"
-              alt="OnlyBonds"
-              className="theme-logo-dark h-5 md:h-7"
-            />
-            <span
-              className="text-[12px] md:text-[14px]"
-              style={{ color: "var(--text-tertiary)" }}
-            >
-              <span
-                style={{ fontFamily: "Georgia, serif", fontStyle: "italic" }}
-              >
-                by
-              </span>{" "}
+            <img src="/light.svg" alt="OnlyBonds" className="theme-logo-light h-5 md:h-7" />
+            <img src="/dark.svg" alt="OnlyBonds" className="theme-logo-dark h-5 md:h-7" />
+            <span className="text-[12px] md:text-[14px]" style={{ color: "var(--text-tertiary)" }}>
+              <span style={{ fontFamily: "Georgia, serif", fontStyle: "italic" }}>by</span>{" "}
               <a
                 href="https://x.com/rb_tweets"
                 target="_blank"
@@ -605,10 +546,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
           {loading
             ? Array.from({ length: 4 }).map((_, i) => (
                 <div key={i}>
-                  <div
-                    className="skeleton mb-1"
-                    style={{ width: 64 + i * 12, height: 28 }}
-                  />
+                  <div className="skeleton mb-1" style={{ width: 64 + i * 12, height: 28 }} />
                   <div className="skeleton" style={{ width: 80, height: 14 }} />
                 </div>
               ))
@@ -643,10 +581,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
               }}
             />
           ))}
-          <span
-            className="mx-1"
-            style={{ color: "var(--text-tertiary)", opacity: 0.3 }}
-          >
+          <span className="mx-1" style={{ color: "var(--text-tertiary)", opacity: 0.3 }}>
             |
           </span>
           {TIME_OPTS.map((o) => (
@@ -691,10 +626,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
         {!showDisputes && (
           <div>
             {/* Categories + Filter */}
-            <div
-              className="flex items-center gap-2 md:gap-3 mb-6 md:mb-8"
-              ref={filterRef}
-            >
+            <div className="flex items-center gap-2 md:gap-3 mb-6 md:mb-8" ref={filterRef}>
               {/* Category pills — simple single-select */}
               <div className="flex items-center gap-2 md:gap-3 overflow-x-auto no-scrollbar flex-1 min-w-0">
                 <FilterLink
@@ -722,10 +654,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
                     border: "none",
                     padding: 0,
                     fontFamily: "inherit",
-                    color:
-                      activeFilterCount > 0
-                        ? "var(--text)"
-                        : "var(--text-tertiary)",
+                    color: activeFilterCount > 0 ? "var(--text)" : "var(--text-tertiary)",
                     fontWeight: activeFilterCount > 0 ? 600 : 400,
                   }}
                 >
@@ -759,8 +688,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
                                 setCatModes((prev) => {
                                   const next = new Map(prev);
                                   if (!mode) next.set(c, "include");
-                                  else if (mode === "include")
-                                    next.set(c, "exclude");
+                                  else if (mode === "include") next.set(c, "exclude");
                                   else next.delete(c);
                                   return next;
                                 })
@@ -780,8 +708,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
                                     : mode === "exclude"
                                       ? "#f87171"
                                       : "#9ca3af",
-                                textDecoration:
-                                  mode === "exclude" ? "line-through" : "none",
+                                textDecoration: mode === "exclude" ? "line-through" : "none",
                               }}
                             >
                               {c}
@@ -816,9 +743,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
                             className="px-2.5 py-1 rounded-md text-[12px] font-medium cursor-pointer transition-all"
                             style={{
                               background:
-                                timeLeft === o.v
-                                  ? "rgba(23,94,202,0.2)"
-                                  : "rgba(255,255,255,0.05)",
+                                timeLeft === o.v ? "rgba(23,94,202,0.2)" : "rgba(255,255,255,0.05)",
                               border: `1px solid ${timeLeft === o.v ? "rgba(23,94,202,0.5)" : "rgba(255,255,255,0.08)"}`,
                               color: timeLeft === o.v ? "#60a5fa" : "#9ca3af",
                             }}
@@ -856,8 +781,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
                                   ? "rgba(23,94,202,0.2)"
                                   : "rgba(255,255,255,0.05)",
                               border: `1px solid ${minLiquidity === o.v ? "rgba(23,94,202,0.5)" : "rgba(255,255,255,0.08)"}`,
-                              color:
-                                minLiquidity === o.v ? "#60a5fa" : "#9ca3af",
+                              color: minLiquidity === o.v ? "#60a5fa" : "#9ca3af",
                             }}
                           >
                             {o.l}
@@ -892,8 +816,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
               <div
                 className="hidden md:grid py-3 text-[13px] font-semibold uppercase tracking-[0.06em]"
                 style={{
-                  gridTemplateColumns:
-                    "24px 1fr 110px 100px 120px 90px 90px 72px",
+                  gridTemplateColumns: "24px 1fr 110px 100px 120px 90px 90px 72px",
                   color: "var(--text-tertiary)",
                   borderBottom: "1px solid var(--border)",
                 }}
@@ -920,8 +843,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
                       fontWeight: "inherit",
                       letterSpacing: "inherit",
                       textTransform: "inherit",
-                      color:
-                        sort === key ? "var(--text)" : "var(--text-tertiary)",
+                      color: sort === key ? "var(--text)" : "var(--text-tertiary)",
                     }}
                   >
                     {["Odds", "Gain", "Expires"][i]}
@@ -955,8 +877,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
                       fontWeight: "inherit",
                       letterSpacing: "inherit",
                       textTransform: "inherit",
-                      color:
-                        sort === key ? "var(--text)" : "var(--text-tertiary)",
+                      color: sort === key ? "var(--text)" : "var(--text-tertiary)",
                     }}
                   >
                     {["Vol", "Liq"][i]}
@@ -981,16 +902,12 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
                     key={i}
                     className="py-4 md:grid md:items-center"
                     style={{
-                      gridTemplateColumns:
-                        "24px 1fr 110px 100px 120px 90px 90px 72px",
+                      gridTemplateColumns: "24px 1fr 110px 100px 120px 90px 90px 72px",
                       borderBottom: "1px solid var(--border)",
                       animationDelay: `${i * 0.05}s`,
                     }}
                   >
-                    <div
-                      className="hidden md:block skeleton"
-                      style={{ width: 16, height: 16 }}
-                    />
+                    <div className="hidden md:block skeleton" style={{ width: 16, height: 16 }} />
                     <div className="flex items-center gap-2 mb-2 md:mb-0 md:pr-8">
                       <div
                         className="md:hidden skeleton"
@@ -1002,42 +919,18 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
                       />
                     </div>
                     <div className="flex items-center gap-4 md:hidden pl-7">
-                      <div
-                        className="skeleton"
-                        style={{ width: 48, height: 14 }}
-                      />
-                      <div
-                        className="skeleton"
-                        style={{ width: 56, height: 14 }}
-                      />
-                      <div
-                        className="skeleton"
-                        style={{ width: 44, height: 14 }}
-                      />
+                      <div className="skeleton" style={{ width: 48, height: 14 }} />
+                      <div className="skeleton" style={{ width: 56, height: 14 }} />
+                      <div className="skeleton" style={{ width: 44, height: 14 }} />
                     </div>
-                    <div
-                      className="hidden md:block skeleton"
-                      style={{ width: 56, height: 16 }}
-                    />
-                    <div
-                      className="hidden md:block skeleton"
-                      style={{ width: 64, height: 16 }}
-                    />
-                    <div
-                      className="hidden md:block skeleton"
-                      style={{ width: 72, height: 16 }}
-                    />
+                    <div className="hidden md:block skeleton" style={{ width: 56, height: 16 }} />
+                    <div className="hidden md:block skeleton" style={{ width: 64, height: 16 }} />
+                    <div className="hidden md:block skeleton" style={{ width: 72, height: 16 }} />
                     <div className="hidden md:flex justify-end">
-                      <div
-                        className="skeleton"
-                        style={{ width: 52, height: 16 }}
-                      />
+                      <div className="skeleton" style={{ width: 52, height: 16 }} />
                     </div>
                     <div className="hidden md:flex justify-end">
-                      <div
-                        className="skeleton"
-                        style={{ width: 52, height: 16 }}
-                      />
+                      <div className="skeleton" style={{ width: 52, height: 16 }} />
                     </div>
                   </div>
                 ))}
@@ -1093,11 +986,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
                   <BondRow key={bond.id} bond={bond} index={i} pinned />
                 ))}
                 {regularRows.map((bond, i) => (
-                  <BondRow
-                    key={bond.id}
-                    bond={bond}
-                    index={pinnedRows.length + i}
-                  />
+                  <BondRow key={bond.id} bond={bond} index={pinnedRows.length + i} />
                 ))}
               </>
             )}
@@ -1168,8 +1057,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
               <div
                 className="hidden md:grid py-3 text-[13px] font-semibold uppercase tracking-[0.06em]"
                 style={{
-                  gridTemplateColumns:
-                    "24px 1fr 110px 100px 120px 90px 90px 72px",
+                  gridTemplateColumns: "24px 1fr 110px 100px 120px 90px 90px 72px",
                   color: "var(--text-tertiary)",
                   borderBottom: "1px solid var(--border)",
                 }}
@@ -1196,8 +1084,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
                       fontWeight: "inherit",
                       letterSpacing: "inherit",
                       textTransform: "inherit",
-                      color:
-                        sort === key ? "var(--text)" : "var(--text-tertiary)",
+                      color: sort === key ? "var(--text)" : "var(--text-tertiary)",
                     }}
                   >
                     {["Odds", "Gain", "Expires"][i]}
@@ -1231,8 +1118,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
                       fontWeight: "inherit",
                       letterSpacing: "inherit",
                       textTransform: "inherit",
-                      color:
-                        sort === key ? "var(--text)" : "var(--text-tertiary)",
+                      color: sort === key ? "var(--text)" : "var(--text-tertiary)",
                     }}
                   >
                     {["Vol", "Liq"][i]}
@@ -1263,10 +1149,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
             ))}
             {disputes.length > 0 && (
               <div className="pt-6 mt-2">
-                <span
-                  className="text-[14px]"
-                  style={{ color: "var(--text-tertiary)" }}
-                >
+                <span className="text-[14px]" style={{ color: "var(--text-tertiary)" }}>
                   {disputes.length} disputed markets
                 </span>
               </div>

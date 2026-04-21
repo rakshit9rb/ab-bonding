@@ -16,12 +16,9 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const event = typeof body.event === "string" ? body.event : "";
-    const distinctId =
-      typeof body.distinctId === "string" ? body.distinctId : "";
+    const distinctId = typeof body.distinctId === "string" ? body.distinctId : "";
     const properties =
-      typeof body.properties === "object" && body.properties
-        ? body.properties
-        : {};
+      typeof body.properties === "object" && body.properties ? body.properties : {};
     if (!events.has(event) || !distinctId) {
       return NextResponse.json({ ok: false }, { status: 400 });
     }

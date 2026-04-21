@@ -20,20 +20,9 @@ function LoginContent() {
         }}
       >
         <div className="flex flex-col items-center mb-8">
-          <img
-            src="/light.svg"
-            alt="OnlyBonds"
-            className="theme-logo-light h-8 mb-1"
-          />
-          <img
-            src="/dark.svg"
-            alt="OnlyBonds"
-            className="theme-logo-dark h-8 mb-1"
-          />
-          <p
-            className="text-[14px] mt-3 text-center"
-            style={{ color: "var(--text-secondary)" }}
-          >
+          <img src="/light.svg" alt="OnlyBonds" className="theme-logo-light h-8 mb-1" />
+          <img src="/dark.svg" alt="OnlyBonds" className="theme-logo-dark h-8 mb-1" />
+          <p className="text-[14px] mt-3 text-center" style={{ color: "var(--text-secondary)" }}>
             Sign in to access the trading terminal
           </p>
         </div>
@@ -68,10 +57,7 @@ function LoginContent() {
           Continue with Google
         </button>
 
-        <p
-          className="text-[12px] text-center mt-6"
-          style={{ color: "var(--text-tertiary)" }}
-        >
+        <p className="text-[12px] text-center mt-6" style={{ color: "var(--text-tertiary)" }}>
           Near-certain Polymarket outcomes ranked by annualized yield
         </p>
       </div>

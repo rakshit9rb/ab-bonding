@@ -4,12 +4,9 @@ export const CLOB_URL = "https://clob.polymarket.com";
 const POLYGON_CHAIN_ID = 137;
 
 // Contract addresses on Polygon
-export const CTF_EXCHANGE =
-  "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E" as const;
-export const NEG_RISK_CTF_EXCHANGE =
-  "0xC5d563A36AE78145C45a50134d48A1215220f80a" as const;
-export const USDC_ADDRESS =
-  "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174" as const; // USDC.e on Polygon
+export const CTF_EXCHANGE = "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E" as const;
+export const NEG_RISK_CTF_EXCHANGE = "0xC5d563A36AE78145C45a50134d48A1215220f80a" as const;
+export const USDC_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174" as const; // USDC.e on Polygon
 
 type Side = "BUY" | "SELL";
 export type OrderType = "GTC" | "FOK"; // Good-til-cancelled, Fill-or-kill (market)
@@ -129,14 +126,9 @@ export async function getUsdcBalance(address: string): Promise<number> {
 }
 
 // ── USDC allowance via proxied API route ─────────────────────────────────────
-export async function getUsdcAllowance(
-  address: string,
-  spender: string,
-): Promise<number> {
+export async function getUsdcAllowance(address: string, spender: string): Promise<number> {
   try {
-    const res = await fetch(
-      `/api/balance?address=${address}&spender=${spender}`,
-    );
+    const res = await fetch(`/api/balance?address=${address}&spender=${spender}`);
     const { allowance } = await res.json();
     return typeof allowance === "number" ? allowance : 0;
   } catch {

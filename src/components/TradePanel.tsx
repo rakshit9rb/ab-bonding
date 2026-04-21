@@ -19,12 +19,7 @@ import {
   OrderPreview,
   OrderType,
 } from "@/lib/polymarket";
-import {
-  getOrCreateCreds,
-  buildL2Headers,
-  clearCreds,
-  ApiCredentials,
-} from "@/lib/polymarketAuth";
+import { getOrCreateCreds, buildL2Headers, clearCreds, ApiCredentials } from "@/lib/polymarketAuth";
 
 interface Props {
   bond: Bond;
@@ -35,30 +30,19 @@ type TradeDir = "BUY" | "SELL";
 
 // ── Order Book Display ───────────────────────────────────────────────────────
 
-function OrderBookDisplay({
-  book,
-  outcome,
-}: {
-  book: OrderBook;
-  outcome: Outcome;
-}) {
+function OrderBookDisplay({ book, outcome }: { book: OrderBook; outcome: Outcome }) {
   const invert = (lvls: { price: string; size: string }[]) =>
     lvls.map((l) => ({
       price: String((1 - parseFloat(l.price)).toFixed(4)),
       size: l.size,
     }));
 
-  const rawAsks =
-    outcome === "NO" ? invert(book.bids ?? []) : (book.asks ?? []);
-  const rawBids =
-    outcome === "NO" ? invert(book.asks ?? []) : (book.bids ?? []);
+  const rawAsks = outcome === "NO" ? invert(book.bids ?? []) : (book.asks ?? []);
+  const rawBids = outcome === "NO" ? invert(book.asks ?? []) : (book.bids ?? []);
 
   const asks = [...rawAsks].slice(-8);
   const bids = [...rawBids].slice(-8).reverse();
-  const maxSize = Math.max(
-    ...[...asks, ...bids].map((l) => parseFloat(l.size) || 0),
-    1,
-  );
+  const maxSize = Math.max(...[...asks, ...bids].map((l) => parseFloat(l.size) || 0), 1);
 
   return (
     <div className="flex flex-col h-full">
@@ -91,16 +75,10 @@ function OrderBookDisplay({
               <span className="relative" style={{ color: "#f87171" }}>
                 {(parseFloat(ask.price) * 100).toFixed(1)}¢
               </span>
-              <span
-                className="relative text-right"
-                style={{ color: "#9ca3af" }}
-              >
+              <span className="relative text-right" style={{ color: "#9ca3af" }}>
                 {parseFloat(ask.size).toFixed(0)}
               </span>
-              <span
-                className="relative text-right"
-                style={{ color: "#6b7280" }}
-              >
+              <span className="relative text-right" style={{ color: "#6b7280" }}>
                 ${(parseFloat(ask.price) * parseFloat(ask.size)).toFixed(0)}
               </span>
             </div>
@@ -142,16 +120,10 @@ function OrderBookDisplay({
               <span className="relative" style={{ color: "#4ade80" }}>
                 {(parseFloat(bid.price) * 100).toFixed(1)}¢
               </span>
-              <span
-                className="relative text-right"
-                style={{ color: "#9ca3af" }}
-              >
+              <span className="relative text-right" style={{ color: "#9ca3af" }}>
                 {parseFloat(bid.size).toFixed(0)}
               </span>
-              <span
-                className="relative text-right"
-                style={{ color: "#6b7280" }}
-              >
+              <span className="relative text-right" style={{ color: "#6b7280" }}>
                 ${(parseFloat(bid.price) * parseFloat(bid.size)).toFixed(0)}
               </span>
             </div>
@@ -164,13 +136,7 @@ function OrderBookDisplay({
 
 // ── Deposit Panel ────────────────────────────────────────────────────────────
 
-function DepositPanel({
-  address,
-  usdcBalance,
-}: {
-  address: string;
-  usdcBalance: number | null;
-}) {
+function DepositPanel({ address, usdcBalance }: { address: string; usdcBalance: number | null }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
     navigator.clipboard.writeText(address).then(() => {
@@ -202,8 +168,7 @@ function DepositPanel({
 
       <p className="text-[12px] mb-3" style={{ color: "#9ca3af" }}>
         Send <strong style={{ color: "#e5e7eb" }}>USDC</strong> on{" "}
-        <strong style={{ color: "#e5e7eb" }}>Polygon</strong> to your wallet
-        address below.
+        <strong style={{ color: "#e5e7eb" }}>Polygon</strong> to your wallet address below.
       </p>
 
       <div className="flex gap-2 mb-3">
@@ -221,9 +186,7 @@ function DepositPanel({
           onClick={copy}
           className="px-3 py-1.5 rounded-lg text-[12px] font-semibold cursor-pointer transition-all shrink-0"
           style={{
-            background: copied
-              ? "rgba(5,150,80,0.2)"
-              : "rgba(255,255,255,0.06)",
+            background: copied ? "rgba(5,150,80,0.2)" : "rgba(255,255,255,0.06)",
             border: "1px solid #374151",
             color: copied ? "#4ade80" : "#9ca3af",
           }}
@@ -233,8 +196,8 @@ function DepositPanel({
       </div>
 
       <p className="text-[11px] mt-1" style={{ color: "#6b7280" }}>
-        Send USDC on <strong style={{ color: "#9ca3af" }}>Polygon</strong> only.
-        Find your address in the account menu ↗
+        Send USDC on <strong style={{ color: "#9ca3af" }}>Polygon</strong> only. Find your address
+        in the account menu ↗
       </p>
     </div>
   );
@@ -242,14 +205,7 @@ function DepositPanel({
 
 // ── Main Component ───────────────────────────────────────────────────────────
 
-type Status =
-  | "idle"
-  | "loading"
-  | "success"
-  | "error"
-  | "approving"
-  | "switching"
-  | "authing";
+type Status = "idle" | "loading" | "success" | "error" | "approving" | "switching" | "authing";
 
 export default function TradePanel({ bond, onClose }: Props) {
   const { authenticated, login, user } = usePrivy();
@@ -282,11 +238,8 @@ export default function TradePanel({ bond, onClose }: Props) {
   const bids = book?.bids ?? [];
   const bestAsk = asks.length ? parseFloat(asks[asks.length - 1].price) : null;
   const bestBid = bids.length ? parseFloat(bids[bids.length - 1].price) : null;
-  const lastPrice = book?.last_trade_price
-    ? parseFloat(book.last_trade_price)
-    : null;
-  const midPrice =
-    lastPrice ?? (bestAsk && bestBid ? (bestAsk + bestBid) / 2 : bond.price);
+  const lastPrice = book?.last_trade_price ? parseFloat(book.last_trade_price) : null;
+  const midPrice = lastPrice ?? (bestAsk && bestBid ? (bestAsk + bestBid) / 2 : bond.price);
 
   const onPolygon = chainId === 137;
 
@@ -374,9 +327,7 @@ export default function TradePanel({ bond, onClose }: Props) {
         const cid = await provider.request({ method: "eth_chainId" });
         setChainId(parseInt(cid as string, 16));
         // Listen to chain changes
-        provider.on?.("chainChanged", (id: unknown) =>
-          setChainId(parseInt(id as string, 16)),
-        );
+        provider.on?.("chainChanged", (id: unknown) => setChainId(parseInt(id as string, 16)));
       } catch {}
 
       getUsdcBalance(wallet.address).then(setUsdcBalance);
@@ -594,10 +545,8 @@ export default function TradePanel({ bond, onClose }: Props) {
     const tradeProps = metricProps({
       token_id: tokenId,
       shares: preview.shares,
-      avg_price:
-        orderType === "FOK" ? preview.avgPrice : parseFloat(limitPrice),
-      notional_usdc:
-        tradeDir === "BUY" ? parseFloat(amount || "0") : preview.totalCost,
+      avg_price: orderType === "FOK" ? preview.avgPrice : parseFloat(limitPrice),
+      notional_usdc: tradeDir === "BUY" ? parseFloat(amount || "0") : preview.totalCost,
       price_impact: preview.priceImpact,
     });
     posthog?.capture("trade_submit_clicked", tradeProps);
@@ -623,15 +572,9 @@ export default function TradePanel({ bond, onClose }: Props) {
       if (!activeCreds) return;
 
       const bodyForSig = ""; // we compute headers before body is final; CLOB uses path-only HMAC
-      const l2h = await buildL2Headers(
-        activeCreds,
-        "POST",
-        "/order",
-        bodyForSig,
-      );
+      const l2h = await buildL2Headers(activeCreds, "POST", "/order", bodyForSig);
 
-      const price =
-        orderType === "FOK" ? preview.avgPrice : parseFloat(limitPrice);
+      const price = orderType === "FOK" ? preview.avgPrice : parseFloat(limitPrice);
       const result = await signAndPlaceOrder({
         walletClient: wc,
         address: wallet.address,
@@ -711,10 +654,8 @@ export default function TradePanel({ bond, onClose }: Props) {
   ]);
 
   const usdcNum = parseFloat(amount || "0");
-  const needsApproval =
-    tradeDir === "BUY" && allowance !== null && usdcNum > allowance;
-  const insufficientFunds =
-    tradeDir === "BUY" && usdcBalance !== null && usdcNum > usdcBalance;
+  const needsApproval = tradeDir === "BUY" && allowance !== null && usdcNum > allowance;
+  const insufficientFunds = tradeDir === "BUY" && usdcBalance !== null && usdcNum > usdcBalance;
   const isLoading =
     status === "loading" ||
     status === "approving" ||
@@ -818,9 +759,7 @@ export default function TradePanel({ bond, onClose }: Props) {
                   className="w-1.5 h-1.5 rounded-full inline-block"
                   style={{ background: onPolygon ? "#4ade80" : "#f87171" }}
                 />
-                <span style={{ color: "#6b7280" }}>
-                  {onPolygon ? "Polygon" : "Wrong network"}
-                </span>
+                <span style={{ color: "#6b7280" }}>{onPolygon ? "Polygon" : "Wrong network"}</span>
               </div>
               {usdcBalance !== null && (
                 <span style={{ color: "#6b7280" }}>
@@ -845,9 +784,7 @@ export default function TradePanel({ bond, onClose }: Props) {
                 color: "#fbbf24",
               }}
             >
-              {status === "switching"
-                ? "Switching…"
-                : "Switch to Polygon to trade"}
+              {status === "switching" ? "Switching…" : "Switch to Polygon to trade"}
             </button>
           )}
 
@@ -869,12 +806,7 @@ export default function TradePanel({ bond, onClose }: Props) {
                         : "rgba(220,38,38,0.15)"
                       : "rgba(255,255,255,0.04)",
                   border: `1px solid ${tradeDir === d ? (d === "BUY" ? "rgba(5,150,80,0.5)" : "rgba(220,38,38,0.4)") : "#1f2937"}`,
-                  color:
-                    tradeDir === d
-                      ? d === "BUY"
-                        ? "#4ade80"
-                        : "#f87171"
-                      : "#4b5563",
+                  color: tradeDir === d ? (d === "BUY" ? "#4ade80" : "#f87171") : "#4b5563",
                 }}
               >
                 {d}
@@ -897,18 +829,10 @@ export default function TradePanel({ bond, onClose }: Props) {
                         : "rgba(220,38,38,0.2)"
                       : "rgba(255,255,255,0.04)",
                   border: `1px solid ${outcome === o ? (o === "YES" ? "rgba(5,150,80,0.6)" : "rgba(220,38,38,0.5)") : "#1f2937"}`,
-                  color:
-                    outcome === o
-                      ? o === "YES"
-                        ? "#4ade80"
-                        : "#f87171"
-                      : "#4b5563",
+                  color: outcome === o ? (o === "YES" ? "#4ade80" : "#f87171") : "#4b5563",
                 }}
               >
-                {o}{" "}
-                {bestAsk && outcome === o
-                  ? `${(bestAsk * 100).toFixed(0)}¢`
-                  : ""}
+                {o} {bestAsk && outcome === o ? `${(bestAsk * 100).toFixed(0)}¢` : ""}
               </button>
             ))}
           </div>
@@ -924,10 +848,7 @@ export default function TradePanel({ bond, onClose }: Props) {
                 onClick={() => setOrderType(o.v)}
                 className="py-1.5 rounded-md text-[12px] cursor-pointer transition-all"
                 style={{
-                  background:
-                    orderType === o.v
-                      ? "rgba(255,255,255,0.08)"
-                      : "transparent",
+                  background: orderType === o.v ? "rgba(255,255,255,0.08)" : "transparent",
                   border: `1px solid ${orderType === o.v ? "#374151" : "#1f2937"}`,
                   color: orderType === o.v ? "#9ca3af" : "#4b5563",
                 }}
@@ -970,9 +891,7 @@ export default function TradePanel({ bond, onClose }: Props) {
                 min="0"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                placeholder={
-                  tradeDir === "BUY" ? "USDC to spend" : "Shares to sell"
-                }
+                placeholder={tradeDir === "BUY" ? "USDC to spend" : "Shares to sell"}
                 className="w-full pl-6 pr-3 py-2 rounded-lg text-[13px] font-mono outline-none"
                 style={{
                   background: "#161b22",
@@ -1009,25 +928,19 @@ export default function TradePanel({ bond, onClose }: Props) {
             >
               <div className="flex justify-between mb-1">
                 <span style={{ color: "#6b7280" }}>Avg price</span>
-                <span style={{ color: "#e5e7eb" }}>
-                  {(preview.avgPrice * 100).toFixed(2)}¢
-                </span>
+                <span style={{ color: "#e5e7eb" }}>{(preview.avgPrice * 100).toFixed(2)}¢</span>
               </div>
               <div className="flex justify-between mb-1">
                 <span style={{ color: "#6b7280" }}>
                   {tradeDir === "BUY" ? "Shares" : "Shares sold"}
                 </span>
-                <span style={{ color: "#e5e7eb" }}>
-                  {preview.shares.toFixed(2)}
-                </span>
+                <span style={{ color: "#e5e7eb" }}>{preview.shares.toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
                 <span style={{ color: "#6b7280" }}>
                   {tradeDir === "BUY" ? "Max profit" : "USDC received"}
                 </span>
-                <span
-                  style={{ color: tradeDir === "BUY" ? "#4ade80" : "#60a5fa" }}
-                >
+                <span style={{ color: tradeDir === "BUY" ? "#4ade80" : "#60a5fa" }}>
                   {tradeDir === "BUY"
                     ? `+$${preview.potentialReturn.toFixed(2)}`
                     : `$${preview.totalCost.toFixed(2)}`}
@@ -1060,11 +973,7 @@ export default function TradePanel({ bond, onClose }: Props) {
                       ? "rgba(59,130,246,0.1)"
                       : "rgba(220,38,38,0.1)",
                 color:
-                  status === "success"
-                    ? "#4ade80"
-                    : status === "authing"
-                      ? "#60a5fa"
-                      : "#f87171",
+                  status === "success" ? "#4ade80" : status === "authing" ? "#60a5fa" : "#f87171",
               }}
             >
               {statusMsg}
@@ -1084,8 +993,7 @@ export default function TradePanel({ bond, onClose }: Props) {
             >
               Sign in to Trade
             </button>
-          ) : !onPolygon &&
-            chainId !== null ? null /* handled above */ : needsApproval ? (
+          ) : !onPolygon && chainId !== null ? null /* handled above */ : needsApproval ? (
             <button
               onClick={handleApprove}
               disabled={isLoading}

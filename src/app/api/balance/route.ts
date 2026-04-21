@@ -3,11 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 const USDC_E = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"; // USDC.e (bridged)
 const USDC = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"; // native USDC
 // Public Polygon RPC — more reliable than demo Alchemy key
-const RPCS = [
-  "https://polygon-rpc.com",
-  "https://rpc.ankr.com/polygon",
-  "https://1rpc.io/matic",
-];
+const RPCS = ["https://polygon-rpc.com", "https://rpc.ankr.com/polygon", "https://1rpc.io/matic"];
 
 async function ethCall(to: string, data: string): Promise<string> {
   for (const rpc of RPCS) {
@@ -47,17 +43,13 @@ export async function GET(req: NextRequest) {
     ethCall(USDC, `0x70a08231${padAddr}`),
     ethCall(USDC_E, `0x70a08231${padAddr}`),
   ]);
-  const balance =
-    parseInt(balNative, 16) / 1e6 + parseInt(balBridged, 16) / 1e6;
+  const balance = parseInt(balNative, 16) / 1e6 + parseInt(balBridged, 16) / 1e6;
 
   // allowance(owner, spender) — optional
   let allowance: number | null = null;
   if (/^0x[0-9a-fA-F]{40}$/.test(spender)) {
     const padSpender = spender.slice(2).toLowerCase().padStart(64, "0");
-    const allowResult = await ethCall(
-      USDC,
-      `0xdd62ed3e${padAddr}${padSpender}`,
-    );
+    const allowResult = await ethCall(USDC, `0xdd62ed3e${padAddr}${padSpender}`);
     allowance = parseInt(allowResult, 16) / 1e6;
   }
 
