@@ -2,12 +2,6 @@
   "name": "onlybonds",
   "version": "0.1.0",
   "private": true,
-  "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "onFail": "error"
-    }
-  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -40,5 +34,11 @@
     "oxlint": "^1.58.0",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "onFail": "error"
+    }
   }
 }
