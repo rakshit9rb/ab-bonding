@@ -254,7 +254,7 @@ export async function signAndPlaceOrder({
       method:  'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(l2Headers ?? {}),
+        ...l2Headers,
       },
       body: bodyStr,
     })
