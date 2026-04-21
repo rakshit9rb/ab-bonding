@@ -2,6 +2,12 @@
   "name": "onlybonds",
   "version": "0.1.0",
   "private": true,
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "onFail": "error"
+    }
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -16,7 +22,6 @@
     "@privy-io/react-auth": "^3.22.1",
     "geist": "^1.7.0",
     "next": "16.2.4",
-    "next-auth": "^4.24.14",
     "posthog-js": "^1.369.4",
     "posthog-node": "^5.29.2",
     "react": "19.2.5",
