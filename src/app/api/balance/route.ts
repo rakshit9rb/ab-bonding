@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const USDC = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174'
+const USDC_E  = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174' // USDC.e (bridged)
+const USDC    = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359'  // native USDC
 // Public Polygon RPC — more reliable than demo Alchemy key
 const RPCS = [
   'https://polygon-rpc.com',
@@ -34,9 +35,12 @@ export async function GET(req: NextRequest) {
 
   const padAddr = address.slice(2).toLowerCase().padStart(64, '0')
 
-  // balanceOf(address)
-  const balResult = await ethCall(USDC, `0x70a08231${padAddr}`)
-  const balance = parseInt(balResult, 16) / 1e6
+  // balanceOf(address) — sum native USDC + USDC.e
+  const [balNative, balBridged] = await Promise.all([
+    ethCall(USDC,   `0x70a08231${padAddr}`),
+    ethCall(USDC_E, `0x70a08231${padAddr}`),
+  ])
+  const balance = parseInt(balNative, 16) / 1e6 + parseInt(balBridged, 16) / 1e6
 
   // allowance(owner, spender) — optional
   let allowance: number | null = null
