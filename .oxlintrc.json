@@ -13,7 +13,9 @@
     "correctness": "error"
   },
   "rules": {
-    "nextjs/no-img-element": "off"
+    "nextjs/no-img-element": "off",
+    "nextjs/no-html-link-for-pages": "off",
+    "react/exhaustive-deps": "off"
   },
   "env": {
     "builtin": true
