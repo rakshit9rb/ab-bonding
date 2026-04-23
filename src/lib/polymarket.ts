@@ -172,7 +172,6 @@ export async function signAndPlaceOrder({
   price, // 0–1
   size, // shares
   negRisk,
-  l2Headers,
 }: {
   walletClient: any;
   address: string;
@@ -182,7 +181,6 @@ export async function signAndPlaceOrder({
   price: number;
   size: number;
   negRisk: boolean;
-  l2Headers?: Record<string, string>;
 }): Promise<{ success: boolean; orderId?: string; error?: string }> {
   try {
     const exchange = negRisk ? NEG_RISK_CTF_EXCHANGE : CTF_EXCHANGE;
@@ -249,11 +247,10 @@ export async function signAndPlaceOrder({
     };
 
     const bodyStr = JSON.stringify(bodyObj);
-    const res = await fetch(`${CLOB_URL}/order`, {
+    const res = await fetch("/api/clob/order", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...l2Headers,
       },
       body: bodyStr,
     });

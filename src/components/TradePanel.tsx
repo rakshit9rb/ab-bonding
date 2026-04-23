@@ -23,7 +23,7 @@ import {
   OrderPreview,
   OrderType,
 } from "@/lib/polymarket";
-import { getOrCreateCreds, buildL2Headers, clearCreds, ApiCredentials } from "@/lib/polymarketAuth";
+import { getOrCreateCreds, clearCreds, ApiCredentials } from "@/lib/polymarketAuth";
 
 interface Props {
   bond: Bond;
@@ -539,9 +539,6 @@ export default function TradePanel({ bond, onClose }: Props) {
       const activeCreds = await ensureCreds(wc);
       if (!activeCreds) return;
 
-      const bodyForSig = ""; // we compute headers before body is final; CLOB uses path-only HMAC
-      const l2h = await buildL2Headers(activeCreds, "POST", "/order", bodyForSig);
-
       const price = orderType === "FOK" ? preview.avgPrice : parseFloat(limitPrice);
       const result = await signAndPlaceOrder({
         walletClient: wc,
@@ -552,7 +549,6 @@ export default function TradePanel({ bond, onClose }: Props) {
         price,
         size: preview.shares,
         negRisk: bond.negRisk,
-        l2Headers: l2h,
       });
 
       if (result.success) {
