@@ -1,8 +1,9 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import type { ConnectedWallet } from "@privy-io/react-auth";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { getUsdcBalance, USDC_ADDRESS } from "@/lib/polymarket";
-import { createWalletClient, custom } from "viem";
+import { ensureWalletOnPolygon, getPrimaryWallet } from "@/lib/privyWallet";
 import { polygon } from "viem/chains";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -72,14 +73,15 @@ function PnlBadge({ value, pct }: { value: number; pct?: number }) {
 
 function FundsPanel({
   address,
+  wallet,
   usdcBalance,
   onBalanceRefresh,
 }: {
   address: string;
+  wallet: ConnectedWallet;
   usdcBalance: number | null;
   onBalanceRefresh: () => void;
 }) {
-  const { wallets } = useWallets();
   const [tab, setTab] = useState<"deposit" | "withdraw">("deposit");
   const [copied, setCopied] = useState(false);
   const [withdrawTo, setWithdrawTo] = useState("");
@@ -95,25 +97,18 @@ function FundsPanel({
   };
 
   const handleWithdraw = async () => {
-    const wallet = wallets[0];
     if (!wallet || !withdrawTo || !withdrawAmt) return;
+    if (!/^0x[0-9a-fA-F]{40}$/.test(withdrawTo)) {
+      setTxStatus("error");
+      setTxMsg("Enter a valid Polygon address");
+      return;
+    }
     const amt = parseFloat(withdrawAmt);
     if (isNaN(amt) || amt <= 0) return;
     setTxStatus("loading");
     setTxMsg("");
     try {
-      const provider = await wallet.getEthereumProvider();
-      // Switch to Polygon first
-      try {
-        await provider.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: "0x89" }],
-        });
-      } catch {}
-      const wc = createWalletClient({
-        chain: polygon,
-        transport: custom(provider),
-      });
+      const { walletClient: wc } = await ensureWalletOnPolygon(wallet);
       // ERC-20 transfer(to, amount)
       const toPad = withdrawTo.slice(2).toLowerCase().padStart(64, "0");
       const rawAmt = BigInt(Math.round(amt * 1_000_000));
@@ -620,14 +615,17 @@ type Tab = "positions" | "history";
 
 export default function Portfolio() {
   const { ready, authenticated, login } = usePrivy();
-  const { wallets } = useWallets();
+  const { wallets, ready: walletsReady } = useWallets();
 
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(false);
   const [usdcBalance, setUsdcBalance] = useState<number | null>(null);
   const [tab, setTab] = useState<Tab>("positions");
 
-  const wallet = wallets[0];
+  const wallet = useMemo(
+    () => (walletsReady ? getPrimaryWallet(wallets) : null),
+    [wallets, walletsReady],
+  );
   const address = wallet?.address;
 
   useEffect(() => {
@@ -688,7 +686,7 @@ export default function Portfolio() {
           Your Polymarket positions and trade history.
         </p>
 
-        {!ready ? null : !authenticated ? (
+        {!ready || !walletsReady ? null : !authenticated ? (
           <div
             className="flex flex-col items-center justify-center h-64 gap-4 rounded-2xl"
             style={{ background: "#161b22", border: "1px solid #1f2937" }}
@@ -708,10 +706,20 @@ export default function Portfolio() {
               Connect Wallet
             </button>
           </div>
+        ) : !wallet ? (
+          <div
+            className="flex flex-col items-center justify-center h-64 gap-4 rounded-2xl"
+            style={{ background: "#161b22", border: "1px solid #1f2937" }}
+          >
+            <p className="text-[16px] font-semibold" style={{ color: "var(--text-secondary)" }}>
+              Loading wallet…
+            </p>
+          </div>
         ) : (
           <>
             <FundsPanel
               address={address ?? ""}
+              wallet={wallet}
               usdcBalance={usdcBalance}
               onBalanceRefresh={() => address && getUsdcBalance(address).then(setUsdcBalance)}
             />

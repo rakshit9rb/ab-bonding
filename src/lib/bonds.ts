@@ -245,20 +245,26 @@ export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
   if (tokenIdToIdx.size > 0) {
     const CLOB = "https://clob.polymarket.com";
     const tokenIds = Array.from(tokenIdToIdx.keys());
-    const clobResults = await Promise.allSettled(
-      tokenIds.map((id) =>
-        fetch(`${CLOB}/book?token_id=${id}`, {
-          headers: { "User-Agent": "OnlyBonds/1.0" },
-          signal: AbortSignal.timeout(8000),
-          next: { revalidate: 60 },
-        } as RequestInit).then((r) => (r.ok ? r.json() : null)),
-      ),
-    );
+    const books = await fetch(`${CLOB}/books`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "OnlyBonds/1.0",
+      },
+      body: JSON.stringify(tokenIds.map((token_id) => ({ token_id }))),
+      signal: AbortSignal.timeout(8000),
+      next: { revalidate: 60 },
+    } as RequestInit)
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
 
-    for (let i = 0; i < tokenIds.length; i++) {
-      const result = clobResults[i];
-      if (result.status !== "fulfilled" || !result.value) continue;
-      const book = result.value;
+    const bookList = Array.isArray(books) ? books : [];
+    for (let i = 0; i < bookList.length; i++) {
+      const book = bookList[i];
+      if (!book) continue;
+      const tokenId = String(book.asset_id ?? book.token_id ?? tokenIds[i]);
+      const idx = tokenIdToIdx.get(tokenId) ?? tokenIdToIdx.get(tokenIds[i]);
+      if (idx === undefined) continue;
       const asks: { price: string; size: string }[] = Array.isArray(book.asks) ? book.asks : [];
       const liquidity = asks.reduce((sum, ask) => {
         const p = parseFloat(ask.price);
@@ -266,7 +272,6 @@ export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
         return isNaN(p) || isNaN(s) ? sum : sum + p * s;
       }, 0);
       if (liquidity > 0) {
-        const idx = tokenIdToIdx.get(tokenIds[i])!;
         bonds[idx].liquidity = liquidity;
       }
     }

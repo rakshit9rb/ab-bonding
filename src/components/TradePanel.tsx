@@ -1,10 +1,14 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import posthog from "posthog-js";
-import { createWalletClient, custom } from "viem";
-import { polygon } from "viem/chains";
 import { Bond, fmtVolume } from "@/lib/bonds";
+import {
+  POLYGON_CHAIN_ID,
+  ensureWalletOnPolygon,
+  getPrimaryWallet,
+  parseWalletChainId,
+} from "@/lib/privyWallet";
 import {
   CLOB_URL,
   CTF_EXCHANGE,
@@ -209,7 +213,7 @@ type Status = "idle" | "loading" | "success" | "error" | "approving" | "switchin
 
 export default function TradePanel({ bond, onClose }: Props) {
   const { authenticated, login, user } = usePrivy();
-  const { wallets } = useWallets();
+  const { wallets, ready: walletsReady } = useWallets();
 
   const [outcome, setOutcome] = useState<Outcome>("YES");
   const [tradeDir, setTradeDir] = useState<TradeDir>("BUY");
@@ -227,7 +231,10 @@ export default function TradePanel({ bond, onClose }: Props) {
   const [showDeposit, setShowDeposit] = useState(false);
   const previewSig = useRef("");
 
-  const wallet = wallets[0];
+  const wallet = useMemo(
+    () => (walletsReady ? getPrimaryWallet(wallets) : null),
+    [wallets, walletsReady],
+  );
   const yesTokenId = bond.clobTokenIds?.[0];
   const tokenId = outcome === "YES" ? yesTokenId : bond.clobTokenIds?.[1];
   const exchange = bond.negRisk ? NEG_RISK_CTF_EXCHANGE : CTF_EXCHANGE;
@@ -240,7 +247,7 @@ export default function TradePanel({ bond, onClose }: Props) {
   const lastPrice = book?.last_trade_price ? parseFloat(book.last_trade_price) : null;
   const midPrice = lastPrice ?? (bestAsk && bestBid ? (bestAsk + bestBid) / 2 : bond.price);
 
-  const onPolygon = chainId === 137;
+  const onPolygon = chainId === POLYGON_CHAIN_ID;
 
   const metricProps = useCallback(
     (overrides: Record<string, unknown> = {}) => ({
@@ -319,19 +326,29 @@ export default function TradePanel({ bond, onClose }: Props) {
 
   // Chain + balance + allowance when wallet connects
   useEffect(() => {
-    if (!wallet?.address) return;
+    if (!wallet?.address) {
+      setChainId(null);
+      setUsdcBalance(null);
+      setAllowance(null);
+      return;
+    }
+    let cleanup: (() => void) | undefined;
     (async () => {
       try {
         const provider = await wallet.getEthereumProvider();
         const cid = await provider.request({ method: "eth_chainId" });
-        setChainId(parseInt(cid as string, 16));
-        // Listen to chain changes
-        provider.on?.("chainChanged", (id: unknown) => setChainId(parseInt(id as string, 16)));
+        setChainId(parseWalletChainId(String(cid)));
+        const onChainChanged = (id: unknown) => setChainId(parseWalletChainId(String(id)));
+        provider.on?.("chainChanged", onChainChanged);
+        cleanup = () => {
+          provider.removeListener?.("chainChanged", onChainChanged);
+        };
       } catch {}
 
       getUsdcBalance(wallet.address).then(setUsdcBalance);
       getUsdcAllowance(wallet.address, exchange).then(setAllowance);
     })();
+    return () => cleanup?.();
   }, [wallet?.address, exchange]);
 
   // Preview calculation
@@ -397,36 +414,14 @@ export default function TradePanel({ bond, onClose }: Props) {
     captureServer("network_switch_attempted", metricProps());
     setStatus("switching");
     try {
-      const provider = await wallet.getEthereumProvider();
-      try {
-        await provider.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: "0x89" }],
-        });
-      } catch (e: any) {
-        if (e?.code === 4902) {
-          await provider.request({
-            method: "wallet_addEthereumChain",
-            params: [
-              {
-                chainId: "0x89",
-                chainName: "Polygon Mainnet",
-                nativeCurrency: {
-                  name: "MATIC",
-                  symbol: "MATIC",
-                  decimals: 18,
-                },
-                rpcUrls: ["https://polygon-rpc.com"],
-                blockExplorerUrls: ["https://polygonscan.com"],
-              },
-            ],
-          });
-        } else throw e;
-      }
-      setChainId(137);
-      // Refresh balance after switch
-      getUsdcBalance(wallet.address).then(setUsdcBalance);
-      getUsdcAllowance(wallet.address, exchange).then(setAllowance);
+      await ensureWalletOnPolygon(wallet);
+      setChainId(POLYGON_CHAIN_ID);
+      const [balance, nextAllowance] = await Promise.all([
+        getUsdcBalance(wallet.address),
+        getUsdcAllowance(wallet.address, exchange),
+      ]);
+      setUsdcBalance(balance);
+      setAllowance(nextAllowance);
     } catch (e: any) {
       posthog?.capture(
         "network_switch_failed",
@@ -475,19 +470,9 @@ export default function TradePanel({ bond, onClose }: Props) {
     setStatus("approving");
     setStatusMsg("Approving USDC…");
     try {
-      const provider = await wallet.getEthereumProvider();
-      // Always switch to Polygon before any transaction
-      try {
-        await provider.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: "0x89" }],
-        });
-      } catch {}
-      const wc = createWalletClient({
-        chain: polygon,
-        transport: custom(provider),
-      });
-      const result = await approveUsdc(wc, wallet.address, exchange);
+      const { walletClient } = await ensureWalletOnPolygon(wallet);
+      setChainId(POLYGON_CHAIN_ID);
+      const result = await approveUsdc(walletClient, wallet.address, exchange);
       if (result.success) {
         posthog?.capture("usdc_approval_succeeded", metricProps());
         captureServer("usdc_approval_succeeded", metricProps());
@@ -553,18 +538,8 @@ export default function TradePanel({ bond, onClose }: Props) {
     setStatus("loading");
     setStatusMsg("");
     try {
-      const provider = await wallet.getEthereumProvider();
-      // Always switch to Polygon before any transaction
-      try {
-        await provider.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: "0x89" }],
-        });
-      } catch {}
-      const wc = createWalletClient({
-        chain: polygon,
-        transport: custom(provider),
-      });
+      const { walletClient: wc } = await ensureWalletOnPolygon(wallet);
+      setChainId(POLYGON_CHAIN_ID);
 
       // Ensure L2 creds
       const activeCreds = await ensureCreds(wc);

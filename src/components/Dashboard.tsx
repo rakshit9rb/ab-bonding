@@ -12,6 +12,7 @@ import {
   fmtAPY,
 } from "@/lib/bonds";
 import { PINNED_MARKETS } from "@/lib/constants";
+import { getPrimaryWallet } from "@/lib/privyWallet";
 import { getResolvedTheme, setThemePreference } from "@/lib/theme";
 import BondRow from "./BondRow";
 
@@ -115,9 +116,13 @@ interface DashboardProps {
 
 function PortfolioNavLink() {
   const { authenticated } = usePrivy();
-  const { wallets } = useWallets();
+  const { wallets, ready: walletsReady } = useWallets();
   const [balance, setBalance] = useState<number | null>(null);
-  const address = wallets[0]?.address;
+  const wallet = useMemo(
+    () => (walletsReady ? getPrimaryWallet(wallets) : null),
+    [wallets, walletsReady],
+  );
+  const address = wallet?.address;
 
   useEffect(() => {
     if (!authenticated || !address) return;
@@ -147,13 +152,16 @@ function PortfolioNavLink() {
 
 function AuthButton() {
   const { ready, authenticated, user, login, logout } = usePrivy();
-  const { wallets } = useWallets();
+  const { wallets, ready: walletsReady } = useWallets();
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [balance, setBalance] = useState<number | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
-  const wallet = wallets[0];
+  const wallet = useMemo(
+    () => (walletsReady ? getPrimaryWallet(wallets) : null),
+    [wallets, walletsReady],
+  );
   const address = wallet?.address;
 
   // Close on outside click

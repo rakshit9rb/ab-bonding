@@ -115,13 +115,14 @@ export function calcSellPreview(
 }
 
 // ── USDC balance via our proxied API route ───────────────────────────────────
-export async function getUsdcBalance(address: string): Promise<number> {
+export async function getUsdcBalance(address: string): Promise<number | null> {
   try {
     const res = await fetch(`/api/balance?address=${address}`);
+    if (!res.ok) return null;
     const { balance } = await res.json();
-    return typeof balance === "number" ? balance : 0;
+    return typeof balance === "number" ? balance : null;
   } catch {
-    return 0;
+    return null;
   }
 }
 
