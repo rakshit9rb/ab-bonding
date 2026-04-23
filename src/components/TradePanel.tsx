@@ -34,15 +34,9 @@ type TradeDir = "BUY" | "SELL";
 
 // ── Order Book Display ───────────────────────────────────────────────────────
 
-function OrderBookDisplay({ book, outcome }: { book: OrderBook; outcome: Outcome }) {
-  const invert = (lvls: { price: string; size: string }[]) =>
-    lvls.map((l) => ({
-      price: String((1 - parseFloat(l.price)).toFixed(4)),
-      size: l.size,
-    }));
-
-  const rawAsks = outcome === "NO" ? invert(book.bids ?? []) : (book.asks ?? []);
-  const rawBids = outcome === "NO" ? invert(book.asks ?? []) : (book.bids ?? []);
+function OrderBookDisplay({ book }: { book: OrderBook }) {
+  const rawAsks = book.asks ?? [];
+  const rawBids = book.bids ?? [];
 
   const asks = [...rawAsks].slice(-8);
   const bids = [...rawBids].slice(-8).reverse();
@@ -215,7 +209,7 @@ export default function TradePanel({ bond, onClose }: Props) {
   const { authenticated, login, user } = usePrivy();
   const { wallets, ready: walletsReady } = useWallets();
 
-  const [outcome, setOutcome] = useState<Outcome>("YES");
+  const [outcome, setOutcome] = useState<Outcome>(bond.outcome);
   const [tradeDir, setTradeDir] = useState<TradeDir>("BUY");
   const [orderType, setOrderType] = useState<OrderType>("FOK");
   const [amount, setAmount] = useState("");
@@ -378,9 +372,9 @@ export default function TradePanel({ bond, onClose }: Props) {
         priceImpact: 0,
       });
     } else if (tradeDir === "BUY") {
-      setPreview(calcMarketPreview(book, num, outcome));
+      setPreview(calcMarketPreview(book, num));
     } else {
-      setPreview(calcSellPreview(book, num, outcome));
+      setPreview(calcSellPreview(book, num));
     }
   }, [book, amount, outcome, tradeDir, orderType, limitPrice]);
 
@@ -666,7 +660,7 @@ export default function TradePanel({ bond, onClose }: Props) {
             </div>
           </div>
           {book ? (
-            <OrderBookDisplay book={book} outcome={outcome} />
+            <OrderBookDisplay book={book} />
           ) : (
             <div
               className="flex items-center justify-center h-32 text-[13px]"

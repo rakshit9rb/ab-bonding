@@ -3,7 +3,8 @@ export interface Bond {
   question: string;
   slug: string;
   category: string;
-  price: number; // YES probability 0–1
+  outcome: "YES" | "NO";
+  price: number; // selected outcome probability 0-1
   apy: number | null; // annualised yield %
   endDate: string; // ISO string
   volume: number;
@@ -33,6 +34,15 @@ function parsePrice(m: Record<string, unknown>): number | null {
     }
   } catch {}
   return null;
+}
+
+function getBondSide(yesPrice: number): {
+  outcome: "YES" | "NO";
+  price: number;
+  tokenIndex: 0 | 1;
+} {
+  if (yesPrice >= 0.5) return { outcome: "YES", price: yesPrice, tokenIndex: 0 };
+  return { outcome: "NO", price: 1 - yesPrice, tokenIndex: 1 };
 }
 
 function parseEndDate(m: Record<string, unknown>): string | null {
@@ -192,8 +202,10 @@ export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
   const tokenIdToIdx = new Map<string, number>();
 
   for (const m of raw) {
-    const price = parsePrice(m);
-    if (price == null || price < minProb || price >= 0.9995) continue;
+    const yesPrice = parsePrice(m);
+    if (yesPrice == null) continue;
+    const { outcome, price, tokenIndex } = getBondSide(yesPrice);
+    if (price < minProb || price >= 0.9995) continue;
     const endDate = parseEndDate(m);
     if (!endDate) continue;
     if (new Date(endDate) <= now) continue;
@@ -220,6 +232,7 @@ export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
           "",
       ),
       category: getCategory(m),
+      outcome,
       price,
       apy: calcAPY(price, endDate),
       endDate,
@@ -229,7 +242,7 @@ export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
       negRisk: Boolean(m.negRisk),
     });
 
-    if (clobTokenIds?.[0]) tokenIdToIdx.set(clobTokenIds[0], idx);
+    if (clobTokenIds?.[tokenIndex]) tokenIdToIdx.set(clobTokenIds[tokenIndex], idx);
   }
 
   // Enrich liquidity from CLOB order book — only top 100 markets by volume

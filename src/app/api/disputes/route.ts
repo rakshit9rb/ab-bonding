@@ -88,6 +88,7 @@ export async function GET() {
           question: String(m.question || m.title || "Unknown"),
           slug,
           category: "Disputed",
+          outcome: "YES",
           price: price ?? 0,
           apy:
             price && endDate && !endDate.startsWith("2026-12-31") ? calcAPY(price, endDate) : null,

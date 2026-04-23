@@ -87,7 +87,7 @@ export default memo(function BondRow({ bond, index, pinned }: Props) {
           {/* Mobile stats */}
           <div className="flex items-center gap-4 md:hidden pl-7">
             <span className="text-[14px] font-bold tabular-nums" style={{ color: "var(--green)" }}>
-              {probPct}%
+              {bond.outcome} {probPct}%
             </span>
             <span className="text-[14px] font-bold tabular-nums" style={{ color: "var(--green)" }}>
               {fmtGain(bond.price)}
@@ -107,7 +107,7 @@ export default memo(function BondRow({ bond, index, pinned }: Props) {
           {/* Desktop columns */}
           <div className="hidden md:flex items-center">
             <span className="text-[15px] font-bold tabular-nums" style={{ color: "var(--green)" }}>
-              {probPct}%
+              {bond.outcome} {probPct}%
             </span>
           </div>
           <div className="hidden md:flex items-center">

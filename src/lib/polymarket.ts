@@ -28,18 +28,12 @@ export interface OrderPreview {
 }
 
 // ── BUY preview: spend usdcAmount, walk the ask ladder ──────────────────────
-export function calcMarketPreview(
-  book: OrderBook,
-  usdcAmount: number,
-  side: "YES" | "NO",
-): OrderPreview | null {
-  // Buying YES → take asks on YES token (ASC price, worst first DESC from API — reversed here)
-  // Buying NO  → take bids on YES token inverted
-  const rawLevels = side === "YES" ? book.asks : book.bids;
+export function calcMarketPreview(book: OrderBook, usdcAmount: number): OrderPreview | null {
+  const rawLevels = book.asks;
   if (!rawLevels || rawLevels.length === 0) return null;
 
   // asks come DESC from API; walk from end (best) upward for BUY
-  const levels = side === "YES" ? [...rawLevels].reverse() : rawLevels;
+  const levels = [...rawLevels].reverse();
 
   let remaining = usdcAmount;
   let totalShares = 0;
@@ -75,18 +69,12 @@ export function calcMarketPreview(
 }
 
 // ── SELL preview: sell `shares`, walk the bid ladder ────────────────────────
-export function calcSellPreview(
-  book: OrderBook,
-  shares: number,
-  side: "YES" | "NO",
-): OrderPreview | null {
-  // Selling YES → take bids on YES token (ASC from API; best bid = last element)
-  // Selling NO  → equivalent to buying YES; take asks inverted
-  const rawLevels = side === "YES" ? book.bids : book.asks;
+export function calcSellPreview(book: OrderBook, shares: number): OrderPreview | null {
+  const rawLevels = book.bids;
   if (!rawLevels || rawLevels.length === 0) return null;
 
   // bids come ASC; reverse so best (highest) bid is first
-  const levels = side === "YES" ? [...rawLevels].reverse() : rawLevels;
+  const levels = [...rawLevels].reverse();
   const bestPrice = parseFloat(levels[0].price);
 
   let remaining = shares;

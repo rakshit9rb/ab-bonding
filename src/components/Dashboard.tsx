@@ -23,6 +23,12 @@ const TIME_OPTS: { value: TimeFilter; label: string }[] = [
   { value: "week", label: "Week" },
   { value: "month", label: "Month" },
 ];
+const BOND_ODDS_OPTIONS = [
+  { value: 0.9, label: "\u226590%" },
+  { value: 0.95, label: "\u226595%" },
+  { value: 0.97, label: "\u226597%" },
+  { value: 0.99, label: "\u226599%" },
+];
 
 function FilterLink({
   label,
@@ -578,10 +584,10 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
 
         {/* Threshold + Time */}
         <div className="flex items-center gap-2 md:gap-3 mb-4 overflow-x-auto no-scrollbar">
-          {[0.9, 0.95, 0.97, 0.99].map((p) => (
+          {BOND_ODDS_OPTIONS.map(({ value: p, label }) => (
             <FilterLink
               key={p}
-              label={`${"\u2265"}${(p * 100).toFixed(0)}%`}
+              label={label}
               active={minProb === p}
               onClick={() => {
                 setMinProb(p);
