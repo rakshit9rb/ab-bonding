@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const USDC_E = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"; // USDC.e (bridged)
-// Public Polygon RPC — more reliable than demo Alchemy key
-const RPCS = ["https://polygon-rpc.com", "https://rpc.ankr.com/polygon", "https://1rpc.io/matic"];
+const RPCS = ["https://lb.drpc.live/polygon/AlvF7CBZW0JoqfEAgCDdl6DG-763PyIR8ZoJtiKh6MJI"];
 
 async function ethCall(to: string, data: string): Promise<string | null> {
   for (const rpc of RPCS) {
