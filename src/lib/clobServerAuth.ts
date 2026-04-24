@@ -13,7 +13,10 @@ const credsByAddress = new Map<string, ApiCredentials>();
 
 function decodeSecret(secret: string): Buffer {
   return Buffer.from(
-    secret.replaceAll("-", "+").replaceAll("_", "/").replace(/[^A-Za-z0-9+/=]/g, ""),
+    secret
+      .replaceAll("-", "+")
+      .replaceAll("_", "/")
+      .replace(/[^A-Za-z0-9+/=]/g, ""),
     "base64",
   );
 }

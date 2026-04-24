@@ -8,9 +8,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const owner = typeof body.owner === "string" ? body.owner.toLowerCase() : "";
     const order =
-      typeof body.order === "object" && body.order
-        ? (body.order as Record<string, unknown>)
-        : null;
+      typeof body.order === "object" && body.order ? (body.order as Record<string, unknown>) : null;
     const signer = typeof order?.signer === "string" ? order.signer.toLowerCase() : "";
     const maker = typeof order?.maker === "string" ? order.maker.toLowerCase() : "";
     if (!owner || !order || owner !== signer || owner !== maker) {

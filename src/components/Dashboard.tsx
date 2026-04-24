@@ -351,6 +351,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
   const [minProb, setMinProb] = useState(0.95);
   const [disputes, setDisputes] = useState<Bond[]>([]);
   const [showDisputes, setShowDisputes] = useState(false);
+  const hasInitialBonds = Boolean(initialBonds?.length);
 
   const loadDisputes = useCallback(async () => {
     try {
@@ -387,10 +388,10 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
   }, []);
 
   useEffect(() => {
-    load();
+    if (!hasInitialBonds) void load();
     const id = setInterval(load, 5 * 60 * 1000);
     return () => clearInterval(id);
-  }, [load]);
+  }, [hasInitialBonds, load]);
   useEffect(() => {
     loadDisputes();
     const id = setInterval(loadDisputes, 5 * 60 * 1000);

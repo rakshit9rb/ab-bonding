@@ -19,6 +19,9 @@ export type SortKey = "gain" | "apy" | "prob" | "expiry" | "volume" | "liquidity
 export type TimeLeft = "any" | "1h" | "6h" | "12h" | "24h" | "7d";
 
 const GAMMA = "https://gamma-api.polymarket.com";
+const MARKET_PAGE_LIMIT = 200;
+const MARKET_PAGE_COUNT = 4;
+const MARKET_ORDERS = ["volume_num", "liquidity_num"];
 
 function parsePrice(m: Record<string, unknown>): number | null {
   try {
@@ -142,39 +145,46 @@ function getLiquidity(m: Record<string, unknown>): number {
 
 // Server-side only — called from API route
 export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
-  const PAGES = 25;
-  const LIMIT = 200;
-  const SORT_KEYS = ["volume24hr", "liquidity", "lastTradePrice", "startDate"];
-
-  const pageUrls: string[] = [];
-  for (const order of SORT_KEYS) {
-    for (let page = 0; page < PAGES; page++) {
-      pageUrls.push(
-        `${GAMMA}/markets?closed=false&archived=false&active=true&limit=${LIMIT}&offset=${page * LIMIT}&order=${order}&ascending=false`,
-      );
-    }
-  }
-
-  const results = await Promise.allSettled(
-    pageUrls.map((url) =>
-      fetch(url, {
-        headers: { "User-Agent": "OnlyBonds/1.0" },
-        next: { revalidate: 60 },
-      }).then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      }),
-    ),
-  );
-
   const seen = new Set<string>();
   let raw: Record<string, unknown>[] = [];
 
+  const fetchMarketPages = async (order: string) => {
+    let cursor: string | undefined;
+    const markets: Record<string, unknown>[] = [];
+
+    for (let page = 0; page < MARKET_PAGE_COUNT; page++) {
+      const params = new URLSearchParams({
+        closed: "false",
+        limit: String(MARKET_PAGE_LIMIT),
+        order,
+        ascending: "false",
+      });
+      if (cursor) params.set("after_cursor", cursor);
+
+      const res = await fetch(`${GAMMA}/markets/keyset?${params.toString()}`, {
+        headers: { "User-Agent": "OnlyBonds/1.0" },
+        next: { revalidate: 60 },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const data = await res.json();
+      const pageMarkets: Record<string, unknown>[] = Array.isArray(data)
+        ? data
+        : (data.markets ?? []);
+      markets.push(...pageMarkets);
+
+      cursor = typeof data.next_cursor === "string" ? data.next_cursor : undefined;
+      if (!cursor || pageMarkets.length < MARKET_PAGE_LIMIT) break;
+    }
+
+    return markets;
+  };
+
+  const results = await Promise.allSettled(MARKET_ORDERS.map(fetchMarketPages));
+
   for (const result of results) {
     if (result.status !== "fulfilled") continue;
-    const data = result.value;
-    const page: Record<string, unknown>[] = Array.isArray(data) ? data : (data.markets ?? []);
-    for (const m of page) {
+    for (const m of result.value) {
       const id = String(m.conditionId || m.id || "");
       if (!id || seen.has(id)) continue;
       seen.add(id);
@@ -182,10 +192,10 @@ export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
     }
   }
 
-  // Fallback if all parallel fetches failed
+  // Fallback if keyset pagination fails across all orders.
   if (raw.length === 0) {
     try {
-      const res = await fetch(`${GAMMA}/markets?closed=false&limit=${LIMIT}`, {
+      const res = await fetch(`${GAMMA}/markets?closed=false&limit=200`, {
         headers: { "User-Agent": "OnlyBonds/1.0" },
         next: { revalidate: 60 },
       });
@@ -198,19 +208,18 @@ export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
 
   const now = new Date();
   const bonds: Bond[] = [];
-  // tokenId → index in bonds array (for CLOB enrichment)
-  const tokenIdToIdx = new Map<string, number>();
 
   for (const m of raw) {
+    if (m.closed === true || m.archived === true || m.active === false) continue;
+
     const yesPrice = parsePrice(m);
     if (yesPrice == null) continue;
-    const { outcome, price, tokenIndex } = getBondSide(yesPrice);
+    const { outcome, price } = getBondSide(yesPrice);
     if (price < minProb || price >= 0.9995) continue;
     const endDate = parseEndDate(m);
     if (!endDate) continue;
     if (new Date(endDate) <= now) continue;
 
-    const idx = bonds.length;
     let clobTokenIds: [string, string] | null = null;
     try {
       const raw_ids = m.clobTokenIds;
@@ -241,53 +250,6 @@ export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
       clobTokenIds,
       negRisk: Boolean(m.negRisk),
     });
-
-    if (clobTokenIds?.[tokenIndex]) tokenIdToIdx.set(clobTokenIds[tokenIndex], idx);
-  }
-
-  // Enrich liquidity from CLOB order book — only top 100 markets by volume
-  // to avoid hundreds of outbound requests slowing the response
-  const topTokenIds = Array.from(tokenIdToIdx.keys())
-    .sort((a, b) => bonds[tokenIdToIdx.get(b)!].volume - bonds[tokenIdToIdx.get(a)!].volume)
-    .slice(0, 100);
-  const topTokenIdSet = new Set(topTokenIds);
-  for (const id of Array.from(tokenIdToIdx.keys())) {
-    if (!topTokenIdSet.has(id)) tokenIdToIdx.delete(id);
-  }
-
-  if (tokenIdToIdx.size > 0) {
-    const CLOB = "https://clob.polymarket.com";
-    const tokenIds = Array.from(tokenIdToIdx.keys());
-    const books = await fetch(`${CLOB}/books`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": "OnlyBonds/1.0",
-      },
-      body: JSON.stringify(tokenIds.map((token_id) => ({ token_id }))),
-      signal: AbortSignal.timeout(8000),
-      next: { revalidate: 60 },
-    } as RequestInit)
-      .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null);
-
-    const bookList = Array.isArray(books) ? books : [];
-    for (let i = 0; i < bookList.length; i++) {
-      const book = bookList[i];
-      if (!book) continue;
-      const tokenId = String(book.asset_id ?? book.token_id ?? tokenIds[i]);
-      const idx = tokenIdToIdx.get(tokenId) ?? tokenIdToIdx.get(tokenIds[i]);
-      if (idx === undefined) continue;
-      const asks: { price: string; size: string }[] = Array.isArray(book.asks) ? book.asks : [];
-      const liquidity = asks.reduce((sum, ask) => {
-        const p = parseFloat(ask.price);
-        const s = parseFloat(ask.size);
-        return isNaN(p) || isNaN(s) ? sum : sum + p * s;
-      }, 0);
-      if (liquidity > 0) {
-        bonds[idx].liquidity = liquidity;
-      }
-    }
   }
 
   return bonds;
