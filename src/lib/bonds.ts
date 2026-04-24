@@ -21,7 +21,11 @@ export type TimeLeft = "any" | "1h" | "6h" | "12h" | "24h" | "7d";
 const GAMMA = "https://gamma-api.polymarket.com";
 const MARKET_PAGE_LIMIT = 200;
 const MARKET_PAGE_COUNT = 4;
-const MARKET_ORDERS = ["volume_num", "liquidity_num"];
+const MARKET_QUERIES = [
+  { order: "volume_num", ascending: false },
+  { order: "liquidity_num", ascending: false },
+  { order: "endDateIso", ascending: true },
+] as const;
 
 function parsePrice(m: Record<string, unknown>): number | null {
   try {
@@ -148,17 +152,19 @@ export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
   const seen = new Set<string>();
   let raw: Record<string, unknown>[] = [];
 
-  const fetchMarketPages = async (order: string) => {
+  const fetchMarketPages = async (query: (typeof MARKET_QUERIES)[number]) => {
     let cursor: string | undefined;
     const markets: Record<string, unknown>[] = [];
 
     for (let page = 0; page < MARKET_PAGE_COUNT; page++) {
       const params = new URLSearchParams({
+        active: "true",
         closed: "false",
         limit: String(MARKET_PAGE_LIMIT),
-        order,
-        ascending: "false",
+        order: query.order,
+        ascending: String(query.ascending),
       });
+      if (query.order === "endDateIso") params.set("end_date_min", now.toISOString().slice(0, 10));
       if (cursor) params.set("after_cursor", cursor);
 
       const res = await fetch(`${GAMMA}/markets/keyset?${params.toString()}`, {
@@ -180,7 +186,8 @@ export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
     return markets;
   };
 
-  const results = await Promise.allSettled(MARKET_ORDERS.map(fetchMarketPages));
+  const now = new Date();
+  const results = await Promise.allSettled(MARKET_QUERIES.map(fetchMarketPages));
 
   for (const result of results) {
     if (result.status !== "fulfilled") continue;
@@ -206,7 +213,6 @@ export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
     } catch {}
   }
 
-  const now = new Date();
   const bonds: Bond[] = [];
 
   for (const m of raw) {
