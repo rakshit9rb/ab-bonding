@@ -1,10 +1,9 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type { ConnectedWallet } from "@privy-io/react-auth";
-import { usePrivy, useWallets } from "@privy-io/react-auth";
-import { getUsdcBalance, USDC_ADDRESS } from "@/lib/polymarket";
+import { usePrivy, useSendTransaction, useWallets } from "@privy-io/react-auth";
+import { getUsdcBalance, transferUsdcSponsored } from "@/lib/polymarket";
 import { ensureWalletOnPolygon, getPrimaryWallet } from "@/lib/privyWallet";
-import { polygon } from "viem/chains";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -88,6 +87,7 @@ function FundsPanel({
   const [withdrawAmt, setWithdrawAmt] = useState("");
   const [txStatus, setTxStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [txMsg, setTxMsg] = useState("");
+  const { sendTransaction } = useSendTransaction();
 
   const copy = () => {
     navigator.clipboard.writeText(address).then(() => {
@@ -108,17 +108,15 @@ function FundsPanel({
     setTxStatus("loading");
     setTxMsg("");
     try {
-      const { walletClient: wc } = await ensureWalletOnPolygon(wallet);
-      // ERC-20 transfer(to, amount)
-      const toPad = withdrawTo.slice(2).toLowerCase().padStart(64, "0");
+      await ensureWalletOnPolygon(wallet);
       const rawAmt = BigInt(Math.round(amt * 1_000_000));
-      const amtHex = rawAmt.toString(16).padStart(64, "0");
-      await wc.sendTransaction({
-        account: address as `0x${string}`,
-        to: USDC_ADDRESS,
-        data: `0xa9059cbb${toPad}${amtHex}` as `0x${string}`,
-        chain: polygon,
+      const result = await transferUsdcSponsored({
+        sendTransaction,
+        address,
+        to: withdrawTo,
+        amount: rawAmt,
       });
+      if (!result.success) throw new Error(result.error ?? "Transaction failed");
       setTxStatus("success");
       setTxMsg(`Sent $${amt.toFixed(2)} USDC.e`);
       setWithdrawAmt("");

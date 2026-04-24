@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { usePrivy, useWallets } from "@privy-io/react-auth";
+import { usePrivy, useSendTransaction, useWallets } from "@privy-io/react-auth";
 import posthog from "posthog-js";
 import { Bond, fmtVolume } from "@/lib/bonds";
 import {
@@ -18,7 +18,7 @@ import {
   signAndPlaceOrder,
   getUsdcBalance,
   getUsdcAllowance,
-  approveUsdc,
+  approveUsdcSponsored,
   OrderBook,
   OrderPreview,
   OrderType,
@@ -208,6 +208,7 @@ type Status = "idle" | "loading" | "success" | "error" | "approving" | "switchin
 export default function TradePanel({ bond, onClose }: Props) {
   const { authenticated, login, user } = usePrivy();
   const { wallets, ready: walletsReady } = useWallets();
+  const { sendTransaction } = useSendTransaction();
 
   const [outcome, setOutcome] = useState<Outcome>(bond.outcome);
   const [tradeDir, setTradeDir] = useState<TradeDir>("BUY");
@@ -464,9 +465,9 @@ export default function TradePanel({ bond, onClose }: Props) {
     setStatus("approving");
     setStatusMsg("Approving USDC…");
     try {
-      const { walletClient } = await ensureWalletOnPolygon(wallet);
+      await ensureWalletOnPolygon(wallet);
       setChainId(POLYGON_CHAIN_ID);
-      const result = await approveUsdc(walletClient, wallet.address, exchange);
+      const result = await approveUsdcSponsored(sendTransaction, wallet.address, exchange);
       if (result.success) {
         posthog?.capture("usdc_approval_succeeded", metricProps());
         captureServer("usdc_approval_succeeded", metricProps());
@@ -511,7 +512,7 @@ export default function TradePanel({ bond, onClose }: Props) {
       setStatus("error");
       setStatusMsg(e?.message ?? "Approval failed");
     }
-  }, [wallet, exchange, posthog, metricProps, captureServer]);
+  }, [wallet, exchange, sendTransaction, posthog, metricProps, captureServer]);
 
   // Place order
   const handleTrade = useCallback(async () => {

@@ -1,4 +1,5 @@
 // Polymarket CLOB trading integration
+import { encodeFunctionData, maxUint256 } from "viem";
 
 export const CLOB_URL = "https://clob.polymarket.com";
 const POLYGON_CHAIN_ID = 137;
@@ -125,23 +126,92 @@ export async function getUsdcAllowance(address: string, spender: string): Promis
   }
 }
 
-// ── Approve USDC for exchange (max approval) ──────────────────────────────────
-export async function approveUsdc(
-  walletClient: any,
+type SponsoredTransactionSender = (
+  transaction: {
+    to: `0x${string}`;
+    data: `0x${string}`;
+    chainId: number;
+  },
+  options: {
+    sponsor: true;
+    address: string;
+  },
+) => Promise<{ hash: `0x${string}` }>;
+
+const ERC20_ABI = [
+  {
+    name: "approve",
+    type: "function",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ type: "bool" }],
+  },
+  {
+    name: "transfer",
+    type: "function",
+    inputs: [
+      { name: "to", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ type: "bool" }],
+  },
+] as const;
+
+// ── Sponsored USDC approval via Privy gas sponsorship ────────────────────────
+export async function approveUsdcSponsored(
+  sendTransaction: SponsoredTransactionSender,
   address: string,
   spender: string,
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const spenderPad = spender.slice(2).toLowerCase().padStart(64, "0");
-    const maxVal = "f".repeat(64);
-    const hash = await walletClient.sendTransaction({
-      account: address as `0x${string}`,
-      to: USDC_ADDRESS,
-      data: `0x095ea7b3${spenderPad}${maxVal}` as `0x${string}`,
-    });
+    const { hash } = await sendTransaction(
+      {
+        to: USDC_ADDRESS,
+        data: encodeFunctionData({
+          abi: ERC20_ABI,
+          functionName: "approve",
+          args: [spender as `0x${string}`, maxUint256],
+        }),
+        chainId: POLYGON_CHAIN_ID,
+      },
+      { sponsor: true, address },
+    );
     return { success: true, error: hash };
   } catch (e: any) {
     return { success: false, error: e?.message ?? "Approval failed" };
+  }
+}
+
+// ── Sponsored USDC transfer via Privy gas sponsorship ────────────────────────
+export async function transferUsdcSponsored({
+  sendTransaction,
+  address,
+  to,
+  amount,
+}: {
+  sendTransaction: SponsoredTransactionSender;
+  address: string;
+  to: string;
+  amount: bigint;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { hash } = await sendTransaction(
+      {
+        to: USDC_ADDRESS,
+        data: encodeFunctionData({
+          abi: ERC20_ABI,
+          functionName: "transfer",
+          args: [to as `0x${string}`, amount],
+        }),
+        chainId: POLYGON_CHAIN_ID,
+      },
+      { sponsor: true, address },
+    );
+    return { success: true, error: hash };
+  } catch (e: any) {
+    return { success: false, error: e?.message ?? "Transaction failed" };
   }
 }
 
