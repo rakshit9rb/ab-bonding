@@ -29,6 +29,7 @@ import {
   approveUsdceOnrampSponsored,
   wrapUsdceSponsored,
   OrderBook,
+  OrderPlacementResult,
   OrderPreview,
   OrderType,
 } from "@/lib/polymarket";
@@ -40,6 +41,55 @@ interface Props {
 }
 type Outcome = "YES" | "NO";
 type TradeDir = "BUY" | "SELL";
+
+function shortHash(hash: string) {
+  return `${hash.slice(0, 6)}…${hash.slice(-4)}`;
+}
+
+function formatOrderSuccess(result: OrderPlacementResult, orderType: OrderType) {
+  const hash = result.transactionHashes?.[0];
+  const hashText = hash ? ` Tx ${shortHash(hash)}.` : "";
+  switch (result.status) {
+    case "matched":
+      return `Order matched immediately.${hashText}`;
+    case "delayed":
+      return "Order accepted. Match is delayed by market conditions.";
+    case "unmatched":
+      return "Order accepted but not matched; it is resting on the book.";
+    case "live":
+      return orderType === "GTC"
+        ? "Limit order live on the book."
+        : "Order accepted but not filled yet.";
+    default:
+      return result.status ? `Order accepted (${result.status}).` : "Order accepted.";
+  }
+}
+
+function formatOrderError(error: string | undefined) {
+  if (!error) return "Order failed";
+  if (error.includes("FOK_ORDER_NOT_FILLED_ERROR")) {
+    return "FOK order was not filled. The book moved or there was not enough liquidity.";
+  }
+  if (error.includes("INVALID_ORDER_NOT_ENOUGH_BALANCE")) {
+    return "Insufficient balance, allowance, or available funds after open orders.";
+  }
+  if (error.includes("INVALID_ORDER_MIN_TICK_SIZE")) {
+    return "Price does not match this market's tick size.";
+  }
+  if (error.includes("INVALID_ORDER_MIN_SIZE")) {
+    return "Order is below Polymarket's minimum size.";
+  }
+  if (error.includes("MARKET_NOT_READY")) {
+    return "Market is not accepting orders yet.";
+  }
+  if (error.includes("ORDER_DELAYED")) {
+    return "Order match was delayed by market conditions.";
+  }
+  if (error.includes("EXECUTION_ERROR")) {
+    return "Polymarket accepted the order but execution failed upstream.";
+  }
+  return error;
+}
 
 // ── Order Book Display ───────────────────────────────────────────────────────
 
@@ -183,7 +233,11 @@ function DepositPanel({
       const rawAmount = BigInt(Math.round(wrapNum * 1_000_000));
       const result = needsOnrampApproval
         ? await approveUsdceOnrampSponsored(sendTransaction, address)
-        : await wrapUsdceSponsored({ sendTransaction, address, amount: rawAmount });
+        : await wrapUsdceSponsored({
+            sendTransaction,
+            address,
+            amount: rawAmount,
+          });
       if (!result.success) throw new Error(result.error ?? "Transaction failed");
       setWrapStatus("success");
       setWrapMsg(
@@ -702,20 +756,29 @@ export default function TradePanel({ bond, onClose }: Props) {
         orderType,
         price,
         size: preview.shares,
+        amount: parseFloat(amount || "0"),
         negRisk: bond.negRisk,
+        tickSize: book?.tick_size,
+        userUSDCBalance: usdcBalance,
       });
 
       if (result.success) {
         posthog?.capture("trade_succeeded", {
           ...tradeProps,
           order_id: result.orderId ?? null,
+          order_status: result.status ?? null,
+          transaction_hash: result.transactionHashes?.[0] ?? null,
+          trade_id: result.tradeIds?.[0] ?? null,
         });
         captureServer("trade_succeeded", {
           ...tradeProps,
           order_id: result.orderId ?? null,
+          order_status: result.status ?? null,
+          transaction_hash: result.transactionHashes?.[0] ?? null,
+          trade_id: result.tradeIds?.[0] ?? null,
         });
         setStatus("success");
-        setStatusMsg("Order placed!");
+        setStatusMsg(formatOrderSuccess(result, orderType));
         setAmount("");
         refreshBalances();
       } else {
@@ -737,7 +800,7 @@ export default function TradePanel({ bond, onClose }: Props) {
           error_message: result.error ?? "Order failed",
         });
         setStatus("error");
-        setStatusMsg(result.error ?? "Order failed");
+        setStatusMsg(formatOrderError(result.error));
       }
     } catch (e: any) {
       posthog?.capture("trade_failed", {

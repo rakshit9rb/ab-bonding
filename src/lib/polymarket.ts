@@ -1,4 +1,12 @@
 // Polymarket CLOB trading integration
+import {
+  ClobClient,
+  OrderType as ClobOrderType,
+  Side as ClobSide,
+  orderToJsonV2,
+} from "@polymarket/clob-client-v2";
+import type { CreateOrderOptions, SignedOrder, TickSize } from "@polymarket/clob-client-v2";
+import type { WalletClient } from "viem";
 import { encodeFunctionData, maxUint256 } from "viem";
 
 export const CLOB_URL = "https://clob.polymarket.com";
@@ -33,6 +41,19 @@ export interface OrderPreview {
   priceImpact: number; // % slippage from best price
   limitPrice?: number; // worst price touched by a market preview
   fee?: number;
+}
+
+export type OrderPlacementStatus = "live" | "matched" | "delayed" | "unmatched" | string;
+
+export interface OrderPlacementResult {
+  success: boolean;
+  orderId?: string;
+  status?: OrderPlacementStatus;
+  transactionHashes?: string[];
+  tradeIds?: string[];
+  takingAmount?: string;
+  makingAmount?: string;
+  error?: string;
 }
 
 // ── BUY preview: spend usdcAmount, walk the ask ladder ──────────────────────
@@ -382,28 +403,23 @@ export async function transferUsdcSponsored({
   }
 }
 
-// ── EIP-712 order signing for Polymarket CLOB ─────────────────────────────────
-const ORDER_TYPES = {
-  Order: [
-    { name: "salt", type: "uint256" },
-    { name: "maker", type: "address" },
-    { name: "signer", type: "address" },
-    { name: "tokenId", type: "uint256" },
-    { name: "makerAmount", type: "uint256" },
-    { name: "takerAmount", type: "uint256" },
-    { name: "side", type: "uint8" },
-    { name: "signatureType", type: "uint8" },
-    { name: "timestamp", type: "uint256" },
-    { name: "metadata", type: "bytes32" },
-    { name: "builder", type: "bytes32" },
-  ],
-} as const;
-
 function getBuilderCode(): `0x${string}` {
   const value = process.env.NEXT_PUBLIC_POLY_BUILDER_CODE;
   return /^0x[0-9a-fA-F]{64}$/.test(value ?? "") ? (value as `0x${string}`) : ZERO_BYTES32;
 }
 
+function isV2SignedOrder(order: SignedOrder): order is Parameters<typeof orderToJsonV2>[0] {
+  return "timestamp" in order && "metadata" in order && "builder" in order;
+}
+
+function toSdkTickSize(tickSize: string | undefined): TickSize | undefined {
+  if (tickSize === "0.1" || tickSize === "0.01" || tickSize === "0.001" || tickSize === "0.0001") {
+    return tickSize;
+  }
+  return undefined;
+}
+
+// ── SDK-backed order signing for Polymarket CLOB ─────────────────────────────
 export async function signAndPlaceOrder({
   walletClient,
   address,
@@ -412,84 +428,69 @@ export async function signAndPlaceOrder({
   orderType,
   price, // 0–1
   size, // shares
+  amount, // FOK BUY: pUSD to spend; FOK SELL: shares to sell
   negRisk,
+  tickSize,
+  userUSDCBalance,
 }: {
-  walletClient: any;
+  walletClient: WalletClient;
   address: string;
   tokenId: string;
   side: Side;
   orderType: OrderType;
   price: number;
   size: number;
+  amount: number;
   negRisk: boolean;
-}): Promise<{ success: boolean; orderId?: string; error?: string }> {
+  tickSize?: string;
+  userUSDCBalance?: number | null;
+}): Promise<OrderPlacementResult> {
   try {
-    const exchange = negRisk ? NEG_RISK_CTF_EXCHANGE : CTF_EXCHANGE;
-    const salt = BigInt(Math.floor(Math.random() * 1e15));
-    const timestamp = BigInt(Date.now());
     const builder = getBuilderCode();
-    const sideInt = side === "BUY" ? 0 : 1;
-
-    // BUY:  maker gives collateral, taker gives shares
-    // SELL: maker gives shares, taker gives collateral
-    const makerAmountRaw =
-      side === "BUY"
-        ? BigInt(Math.round(price * size * 1_000_000)) // collateral (6 dec)
-        : BigInt(Math.round(size * 1_000_000)); // shares (6 dec)
-    const takerAmountRaw =
-      side === "BUY"
-        ? BigInt(Math.round(size * 1_000_000)) // shares
-        : BigInt(Math.round(price * size * 1_000_000)); // collateral received
-
-    const orderMessage = {
-      salt,
-      maker: address as `0x${string}`,
-      signer: address as `0x${string}`,
-      tokenId: BigInt(tokenId),
-      makerAmount: makerAmountRaw,
-      takerAmount: takerAmountRaw,
-      side: sideInt,
-      signatureType: 0,
-      timestamp,
-      metadata: ZERO_BYTES32,
-      builder,
-    };
-
-    const signature = await walletClient.signTypedData({
-      account: address as `0x${string}`,
-      domain: {
-        name: "Polymarket CTF Exchange",
-        version: "2",
-        chainId: POLYGON_CHAIN_ID,
-        verifyingContract: exchange,
-      },
-      types: ORDER_TYPES,
-      primaryType: "Order",
-      message: orderMessage,
+    const client = new ClobClient({
+      host: CLOB_URL,
+      chain: POLYGON_CHAIN_ID,
+      signer: walletClient,
+      builderConfig: builder === ZERO_BYTES32 ? undefined : { builderCode: builder },
     });
-
-    const bodyObj = {
-      order: {
-        salt: Number(salt),
-        maker: address,
-        signer: address,
-        tokenId,
-        makerAmount: makerAmountRaw.toString(),
-        takerAmount: takerAmountRaw.toString(),
-        expiration: "0",
-        side,
-        signatureType: 0,
-        timestamp: timestamp.toString(),
-        metadata: ZERO_BYTES32,
-        builder,
-        signature,
-      },
-      owner: address,
-      orderType: orderType === "FOK" ? "FOK" : "GTC",
-      deferExec: false,
-      postOnly: false,
+    const sdkSide = side === "BUY" ? ClobSide.BUY : ClobSide.SELL;
+    const sdkTickSize = toSdkTickSize(tickSize);
+    const orderOptions: Partial<CreateOrderOptions> = {
+      negRisk,
+      ...(sdkTickSize ? { tickSize: sdkTickSize } : {}),
     };
+    const balanceOption =
+      side === "BUY" && typeof userUSDCBalance === "number" ? { userUSDCBalance } : {};
+    const signedOrder =
+      orderType === "FOK"
+        ? await client.createMarketOrder(
+            {
+              tokenID: tokenId,
+              side: sdkSide,
+              amount,
+              price,
+              orderType: ClobOrderType.FOK,
+              ...balanceOption,
+            },
+            orderOptions,
+          )
+        : await client.createOrder(
+            {
+              tokenID: tokenId,
+              side: sdkSide,
+              price,
+              size,
+              ...balanceOption,
+            },
+            orderOptions,
+          );
 
+    if (!isV2SignedOrder(signedOrder)) throw new Error("Polymarket CLOB did not return a V2 order");
+    const bodyObj = orderToJsonV2(
+      signedOrder,
+      address,
+      orderType === "FOK" ? ClobOrderType.FOK : ClobOrderType.GTC,
+    );
     const bodyStr = JSON.stringify(bodyObj);
     const res = await fetch("/api/clob/order", {
       method: "POST",
@@ -510,7 +511,19 @@ export async function signAndPlaceOrder({
         success: false,
         error: data.errorMsg || data.error || "Order rejected",
       };
-    return { success: true, orderId: data.orderID };
+    return {
+      success: true,
+      orderId: typeof data.orderID === "string" ? data.orderID : undefined,
+      status: typeof data.status === "string" ? data.status : undefined,
+      transactionHashes: Array.isArray(data.transactionsHashes)
+        ? data.transactionsHashes.filter((hash: unknown) => typeof hash === "string")
+        : undefined,
+      tradeIds: Array.isArray(data.tradeIDs)
+        ? data.tradeIDs.filter((tradeId: unknown) => typeof tradeId === "string")
+        : undefined,
+      takingAmount: typeof data.takingAmount === "string" ? data.takingAmount : undefined,
+      makingAmount: typeof data.makingAmount === "string" ? data.makingAmount : undefined,
+    };
   } catch (e: any) {
     return { success: false, error: e?.message ?? "Unknown error" };
   }
