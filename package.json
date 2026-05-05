@@ -7,6 +7,7 @@
     "build": "next build",
     "lint": "oxlint . --quiet",
     "format": "oxlint . --fix --quiet && oxfmt --write .",
+    "lint-staged": "lint-staged",
     "start": "next start",
     "prepare": "husky",
     "knip": "knip"
@@ -30,10 +31,18 @@
     "babel-plugin-react-compiler": "1.0.0",
     "husky": "^9.1.7",
     "knip": "^6.6.0",
+    "lint-staged": "^16.4.0",
     "oxfmt": "^0.46.0",
     "oxlint": "^1.58.0",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx}": [
+      "oxlint --fix --quiet",
+      "oxfmt --write"
+    ],
+    "*.{json,jsonc,css,md,mdx}": "oxfmt --write"
   },
   "devEngines": {
     "packageManager": {
