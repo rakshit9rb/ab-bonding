@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getClobCreds } from "@/lib/clobServerAuth";
+import { getClobCreds, type ApiCredentials } from "@/lib/clobServerAuth";
 import { fetchClobAuthed } from "@/lib/clobFetch";
 
 const END_CURSOR = "LTE=";
@@ -32,7 +32,7 @@ async function readJson(res: Response) {
 }
 
 async function getBalanceAllowance(
-  creds: NonNullable<ReturnType<typeof getClobCreds>>,
+  creds: ApiCredentials,
   params: Record<string, string>,
   signatureType: "0" | "3",
 ) {
@@ -52,7 +52,7 @@ async function getBalanceAllowance(
   };
 }
 
-async function getOpenOrders(creds: NonNullable<ReturnType<typeof getClobCreds>>) {
+async function getOpenOrders(creds: ApiCredentials) {
   const orders: OpenOrder[] = [];
   let cursor = INITIAL_CURSOR;
   for (let page = 0; page < 5 && cursor !== END_CURSOR; page += 1) {
@@ -75,7 +75,7 @@ export async function GET(request: Request) {
     const address = url.searchParams.get("address");
     const tokenId = url.searchParams.get("tokenId") ?? undefined;
     const signatureType = url.searchParams.get("signatureType") === "3" ? "3" : "0";
-    const creds = getClobCreds(address);
+    const creds = getClobCreds(request, address);
     if (!creds) return NextResponse.json({ error: "CLOB auth required" }, { status: 401 });
 
     const [collateral, conditional, openOrders] = await Promise.all([

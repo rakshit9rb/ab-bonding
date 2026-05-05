@@ -1,7 +1,11 @@
-import { createHmac } from "crypto";
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "crypto";
+import { NextResponse } from "next/server";
 import { BuilderSigner } from "@polymarket/builder-signing-sdk";
 
 export const CLOB_URL = "https://clob.polymarket.com";
+const CLOB_CREDS_COOKIE = "__Host-clob_creds";
+const CLOB_CREDS_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
+const CLOB_CREDS_COOKIE_VERSION = "v1";
 
 export interface ApiCredentials {
   apiKey: string;
@@ -9,8 +13,6 @@ export interface ApiCredentials {
   passphrase: string;
   address: string;
 }
-
-const credsByAddress = new Map<string, ApiCredentials>();
 
 function decodeSecret(secret: string): Buffer {
   return Buffer.from(
@@ -27,14 +29,109 @@ function normalizeAddress(address: unknown): string | null {
   return address.toLowerCase();
 }
 
-export function getClobCreds(address: unknown): ApiCredentials | null {
-  const normalized = normalizeAddress(address);
-  return normalized ? (credsByAddress.get(normalized) ?? null) : null;
+function getCookieSecret() {
+  const secret =
+    process.env.POLYMARKET_CREDS_SECRET || process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV !== "production") return "onlybonds-dev-clob-creds-secret";
+    throw new Error("POLYMARKET_CREDS_SECRET is required to store CLOB credentials");
+  }
+  return secret;
 }
 
-export function clearClobCreds(address: unknown): boolean {
+function encryptionKey() {
+  return createHash("sha256").update(getCookieSecret()).digest();
+}
+
+function encodeBase64Url(input: Buffer) {
+  return input.toString("base64url");
+}
+
+function decodeBase64Url(input: string) {
+  return Buffer.from(input, "base64url");
+}
+
+function encryptCreds(creds: ApiCredentials) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
+  cipher.setAAD(Buffer.from(creds.address));
+  const ciphertext = Buffer.concat([cipher.update(JSON.stringify(creds), "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return [
+    CLOB_CREDS_COOKIE_VERSION,
+    encodeBase64Url(iv),
+    encodeBase64Url(tag),
+    encodeBase64Url(ciphertext),
+  ].join(".");
+}
+
+function decryptCreds(value: string, address: string): ApiCredentials | null {
+  const [version, iv, tag, ciphertext] = value.split(".");
+  if (version !== CLOB_CREDS_COOKIE_VERSION || !iv || !tag || !ciphertext) return null;
+
+  try {
+    const decipher = createDecipheriv("aes-256-gcm", encryptionKey(), decodeBase64Url(iv));
+    decipher.setAAD(Buffer.from(address));
+    decipher.setAuthTag(decodeBase64Url(tag));
+    const plaintext = Buffer.concat([
+      decipher.update(decodeBase64Url(ciphertext)),
+      decipher.final(),
+    ]).toString("utf8");
+    const parsed = JSON.parse(plaintext) as Partial<ApiCredentials>;
+    if (
+      parsed.address !== address ||
+      typeof parsed.apiKey !== "string" ||
+      typeof parsed.secret !== "string" ||
+      typeof parsed.passphrase !== "string"
+    ) {
+      return null;
+    }
+    return {
+      address,
+      apiKey: parsed.apiKey,
+      secret: parsed.secret,
+      passphrase: parsed.passphrase,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function readCookie(request: Request, name: string) {
+  const cookieHeader = request.headers.get("cookie");
+  if (!cookieHeader) return "";
+  for (const part of cookieHeader.split(";")) {
+    const [rawName, ...rawValue] = part.trim().split("=");
+    if (rawName === name) return rawValue.join("=");
+  }
+  return "";
+}
+
+export function getClobCreds(request: Request, address: unknown): ApiCredentials | null {
   const normalized = normalizeAddress(address);
-  return normalized ? credsByAddress.delete(normalized) : false;
+  if (!normalized) return null;
+  const value = readCookie(request, CLOB_CREDS_COOKIE);
+  return value ? decryptCreds(value, normalized) : null;
+}
+
+export function setClobCredsCookie(response: NextResponse, creds: ApiCredentials) {
+  response.cookies.set(CLOB_CREDS_COOKIE, encryptCreds(creds), {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: CLOB_CREDS_COOKIE_MAX_AGE,
+  });
+}
+
+export function clearClobCredsCookie(response: NextResponse) {
+  response.cookies.set(CLOB_CREDS_COOKIE, "", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+  });
 }
 
 export async function createClobCreds({
@@ -95,7 +192,6 @@ export async function createClobCreds({
     address: normalized,
   };
   if (!creds.apiKey || !creds.secret || !creds.passphrase) return null;
-  credsByAddress.set(normalized, creds);
   return creds;
 }
 

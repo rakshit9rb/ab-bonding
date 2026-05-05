@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     const address = url.searchParams.get("address");
     const orderId = url.searchParams.get("orderId") ?? "";
     const tradeId = url.searchParams.get("tradeId") ?? "";
-    const creds = getClobCreds(address);
+    const creds = getClobCreds(request, address);
     if (!creds) return NextResponse.json({ error: "CLOB auth required" }, { status: 401 });
 
     const order = orderId

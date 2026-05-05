@@ -37,7 +37,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid V2 order fields" }, { status: 400 });
     }
 
-    const creds = getClobCreds(owner);
+    const creds = getClobCreds(request, owner);
     if (!creds) return NextResponse.json({ error: "CLOB auth required" }, { status: 401 });
 
     const upstreamBody = {
