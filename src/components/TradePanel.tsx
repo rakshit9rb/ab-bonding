@@ -56,8 +56,6 @@ interface Props {
 type Outcome = "YES" | "NO";
 type TradeDir = "BUY" | "SELL";
 
-type GeoStatus = "checking" | "allowed" | "blocked" | "error";
-
 interface ClobAccountSnapshot {
   collateral: {
     balance: number;
@@ -723,8 +721,6 @@ export default function TradePanel({ bond, onClose }: Props) {
   const [creds, setCreds] = useState<ApiCredentials | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [statusMsg, setStatusMsg] = useState("");
-  const [geoStatus, setGeoStatus] = useState<GeoStatus>("checking");
-  const [geoMessage, setGeoMessage] = useState("");
   const [showDeposit, setShowDeposit] = useState(false);
   const [depositWallet, setDepositWallet] = useState<DepositWalletInfo | null>(null);
   const previewSig = useRef("");
@@ -801,31 +797,6 @@ export default function TradePanel({ bond, onClose }: Props) {
     },
     [user?.id],
   );
-
-  useEffect(() => {
-    let cancelled = false;
-    setGeoStatus("checking");
-    fetch("/api/geoblock", { cache: "no-store" })
-      .then(async (res) => {
-        const data = await res.json().catch(() => null);
-        if (cancelled) return;
-        if (!res.ok || data?.blocked === true) {
-          setGeoStatus("blocked");
-          setGeoMessage(data?.reason ?? "Polymarket trading is not available in this region.");
-          return;
-        }
-        setGeoStatus("allowed");
-        setGeoMessage("");
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setGeoStatus("error");
-        setGeoMessage("Could not verify Polymarket availability for this region.");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const refreshBalances = useCallback(async () => {
     if (!wallet?.address) {
@@ -1144,11 +1115,6 @@ export default function TradePanel({ bond, onClose }: Props) {
       return;
     }
     if (!tokenId || !preview) return;
-    if (geoStatus !== "allowed") {
-      setStatus("error");
-      setStatusMsg(geoMessage || "Could not verify Polymarket availability for this region.");
-      return;
-    }
     const tradeProps = metricProps({
       token_id: tokenId,
       shares: preview.shares,
@@ -1308,14 +1274,11 @@ export default function TradePanel({ bond, onClose }: Props) {
     metricProps,
     captureServer,
     amount,
-    geoMessage,
-    geoStatus,
     usdcBalance,
     tradingUsdcBalance,
   ]);
 
   const usdcNum = parseFloat(amount || "0");
-  const geoUnavailable = geoStatus !== "allowed";
   const needsApproval =
     tradeDir === "BUY"
       ? collateralAllowance !== null && usdcNum > collateralAllowance
@@ -1447,21 +1410,6 @@ export default function TradePanel({ bond, onClose }: Props) {
                   </span>
                 </span>
               )}
-            </div>
-          )}
-
-          {geoStatus !== "allowed" && (
-            <div
-              className="text-[12px] px-2.5 py-1.5 rounded-lg"
-              style={{
-                background:
-                  geoStatus === "checking" ? "rgba(59,130,246,0.1)" : "rgba(220,38,38,0.1)",
-                color: geoStatus === "checking" ? "#60a5fa" : "#f87171",
-              }}
-            >
-              {geoStatus === "checking"
-                ? "Checking Polymarket availability…"
-                : geoMessage || "Polymarket trading is not available in this region."}
             </div>
           )}
 
@@ -1680,19 +1628,7 @@ export default function TradePanel({ bond, onClose }: Props) {
           )}
 
           {/* CTA */}
-          {geoUnavailable ? (
-            <button
-              disabled
-              className="w-full py-2.5 rounded-lg font-semibold text-[13px] disabled:opacity-50"
-              style={{
-                background: "rgba(220,38,38,0.1)",
-                color: "#f87171",
-                border: "1px solid rgba(220,38,38,0.25)",
-              }}
-            >
-              {geoStatus === "checking" ? "Checking availability…" : "Trading unavailable"}
-            </button>
-          ) : !authenticated ? (
+          {!authenticated ? (
             <button
               onClick={login}
               className="w-full py-2.5 rounded-lg font-semibold text-[14px] cursor-pointer transition-all"
