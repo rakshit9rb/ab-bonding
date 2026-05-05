@@ -1,4 +1,5 @@
 import { createHmac } from "crypto";
+import { BuilderSigner } from "@polymarket/builder-signing-sdk";
 
 export const CLOB_URL = "https://clob.polymarket.com";
 
@@ -109,4 +110,18 @@ export function buildL2Headers(
     POLY_SIGNATURE: sig,
     POLY_TIMESTAMP: timestamp,
   };
+}
+
+export function buildBuilderHeaders(
+  method: string,
+  path: string,
+  body: string,
+): Record<string, string> {
+  const key = process.env.POLY_BUILDER_API_KEY;
+  const secret = process.env.POLY_BUILDER_SECRET;
+  const passphrase = process.env.POLY_BUILDER_PASSPHRASE;
+  if (!key || !secret || !passphrase) return {};
+
+  const signer = new BuilderSigner({ key, secret, passphrase });
+  return signer.createBuilderHeaderPayload(method.toUpperCase(), path, body);
 }

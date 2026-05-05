@@ -42,6 +42,24 @@ interface Props {
 type Outcome = "YES" | "NO";
 type TradeDir = "BUY" | "SELL";
 
+type GeoStatus = "checking" | "allowed" | "blocked" | "error";
+
+interface ClobAccountSnapshot {
+  collateral: {
+    balance: number;
+    allowance: number;
+    reserved: number;
+    available: number;
+  };
+  conditional: {
+    balance: number;
+    allowance: number;
+    reserved: number;
+    available: number;
+  } | null;
+  openOrderCount: number;
+}
+
 function shortHash(hash: string) {
   return `${hash.slice(0, 6)}…${hash.slice(-4)}`;
 }
@@ -89,6 +107,48 @@ function formatOrderError(error: string | undefined) {
     return "Polymarket accepted the order but execution failed upstream.";
   }
   return error;
+}
+
+function formatLifecycleStatus(status: string | null | undefined) {
+  if (!status) return null;
+  const normalized = status.replace(/^TRADE_STATUS_/, "").replace(/^ORDER_STATUS_/, "");
+  switch (normalized) {
+    case "MATCHED":
+      return "Matched; waiting for onchain settlement.";
+    case "MINED":
+      return "Matched and mined; waiting for final confirmation.";
+    case "CONFIRMED":
+      return "Trade confirmed onchain.";
+    case "RETRYING":
+      return "Trade settlement is retrying upstream.";
+    case "FAILED":
+      return "Trade settlement failed upstream.";
+    case "LIVE":
+      return "Order is live on the book.";
+    case "CANCELED":
+    case "CANCELED_MARKET_RESOLVED":
+      return "Order was canceled.";
+    default:
+      return `Latest status: ${normalized}.`;
+  }
+}
+
+async function fetchClobAccountSnapshot(address: string, tokenId: string) {
+  const params = new URLSearchParams({ address, tokenId });
+  const res = await fetch(`/api/clob/account?${params.toString()}`, { cache: "no-store" });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(data?.error ?? "Could not check CLOB account balance");
+  return data as ClobAccountSnapshot;
+}
+
+async function fetchOrderLifecycle(address: string, orderId?: string, tradeId?: string) {
+  const params = new URLSearchParams({ address });
+  if (orderId) params.set("orderId", orderId);
+  if (tradeId) params.set("tradeId", tradeId);
+  const res = await fetch(`/api/clob/order-status?${params.toString()}`, { cache: "no-store" });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(data?.error ?? "Could not check order status");
+  return data as { status?: string | null };
 }
 
 // ── Order Book Display ───────────────────────────────────────────────────────
@@ -383,6 +443,8 @@ export default function TradePanel({ bond, onClose }: Props) {
   const [creds, setCreds] = useState<ApiCredentials | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [statusMsg, setStatusMsg] = useState("");
+  const [geoStatus, setGeoStatus] = useState<GeoStatus>("checking");
+  const [geoMessage, setGeoMessage] = useState("");
   const [showDeposit, setShowDeposit] = useState(false);
   const previewSig = useRef("");
 
@@ -442,6 +504,31 @@ export default function TradePanel({ bond, onClose }: Props) {
     },
     [user?.id],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    setGeoStatus("checking");
+    fetch("/api/geoblock", { cache: "no-store" })
+      .then(async (res) => {
+        const data = await res.json().catch(() => null);
+        if (cancelled) return;
+        if (!res.ok || data?.blocked === true) {
+          setGeoStatus("blocked");
+          setGeoMessage(data?.reason ?? "Polymarket trading is not available in this region.");
+          return;
+        }
+        setGeoStatus("allowed");
+        setGeoMessage("");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setGeoStatus("error");
+        setGeoMessage("Could not verify Polymarket availability for this region.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const refreshBalances = useCallback(async () => {
     if (!wallet?.address) {
@@ -727,6 +814,11 @@ export default function TradePanel({ bond, onClose }: Props) {
       return;
     }
     if (!wallet || !tokenId || !preview) return;
+    if (geoStatus !== "allowed") {
+      setStatus("error");
+      setStatusMsg(geoMessage || "Could not verify Polymarket availability for this region.");
+      return;
+    }
     const tradeProps = metricProps({
       token_id: tokenId,
       shares: preview.shares,
@@ -746,6 +838,32 @@ export default function TradePanel({ bond, onClose }: Props) {
       const activeCreds = await ensureCreds(wc);
       if (!activeCreds) return;
 
+      const accountSnapshot = await fetchClobAccountSnapshot(wallet.address, tokenId);
+      const requiredAmount = tradeDir === "BUY" ? parseFloat(amount || "0") : preview.shares;
+      const availableAmount =
+        tradeDir === "BUY"
+          ? accountSnapshot.collateral.available
+          : (accountSnapshot.conditional?.available ?? 0);
+      if (requiredAmount > availableAmount + 0.000001) {
+        const message =
+          tradeDir === "BUY"
+            ? `Insufficient available pUSD after open orders. Available: $${availableAmount.toFixed(2)}.`
+            : `Insufficient available ${outcome} shares after open orders. Available: ${availableAmount.toFixed(2)}.`;
+        posthog?.capture("trade_failed", {
+          ...tradeProps,
+          error_message: message,
+          clob_open_order_count: accountSnapshot.openOrderCount,
+        });
+        captureServer("trade_failed", {
+          ...tradeProps,
+          error_message: message,
+          clob_open_order_count: accountSnapshot.openOrderCount,
+        });
+        setStatus("error");
+        setStatusMsg(message);
+        return;
+      }
+
       const price =
         orderType === "FOK" ? (preview.limitPrice ?? preview.avgPrice) : parseFloat(limitPrice);
       const result = await signAndPlaceOrder({
@@ -759,7 +877,7 @@ export default function TradePanel({ bond, onClose }: Props) {
         amount: parseFloat(amount || "0"),
         negRisk: bond.negRisk,
         tickSize: book?.tick_size,
-        userUSDCBalance: usdcBalance,
+        userUSDCBalance: tradeDir === "BUY" ? accountSnapshot.collateral.available : usdcBalance,
       });
 
       if (result.success) {
@@ -781,6 +899,18 @@ export default function TradePanel({ bond, onClose }: Props) {
         setStatusMsg(formatOrderSuccess(result, orderType));
         setAmount("");
         refreshBalances();
+        if (result.orderId || result.tradeIds?.[0]) {
+          const orderId = result.orderId;
+          const tradeId = result.tradeIds?.[0];
+          setTimeout(() => {
+            fetchOrderLifecycle(wallet.address, orderId, tradeId)
+              .then((lifecycle) => {
+                const lifecycleMsg = formatLifecycleStatus(lifecycle.status);
+                if (lifecycleMsg) setStatusMsg(lifecycleMsg);
+              })
+              .catch(() => {});
+          }, 3000);
+        }
       } else {
         // If auth error, clear stored creds so next attempt re-authenticates
         if (
@@ -832,9 +962,13 @@ export default function TradePanel({ bond, onClose }: Props) {
     metricProps,
     captureServer,
     amount,
+    geoMessage,
+    geoStatus,
+    usdcBalance,
   ]);
 
   const usdcNum = parseFloat(amount || "0");
+  const geoUnavailable = geoStatus !== "allowed";
   const needsApproval =
     tradeDir === "BUY"
       ? collateralAllowance !== null && usdcNum > collateralAllowance
@@ -961,6 +1095,21 @@ export default function TradePanel({ bond, onClose }: Props) {
                   </span>
                 </span>
               )}
+            </div>
+          )}
+
+          {geoStatus !== "allowed" && (
+            <div
+              className="text-[12px] px-2.5 py-1.5 rounded-lg"
+              style={{
+                background:
+                  geoStatus === "checking" ? "rgba(59,130,246,0.1)" : "rgba(220,38,38,0.1)",
+                color: geoStatus === "checking" ? "#60a5fa" : "#f87171",
+              }}
+            >
+              {geoStatus === "checking"
+                ? "Checking Polymarket availability…"
+                : geoMessage || "Polymarket trading is not available in this region."}
             </div>
           )}
 
@@ -1179,7 +1328,19 @@ export default function TradePanel({ bond, onClose }: Props) {
           )}
 
           {/* CTA */}
-          {!authenticated ? (
+          {geoUnavailable ? (
+            <button
+              disabled
+              className="w-full py-2.5 rounded-lg font-semibold text-[13px] disabled:opacity-50"
+              style={{
+                background: "rgba(220,38,38,0.1)",
+                color: "#f87171",
+                border: "1px solid rgba(220,38,38,0.25)",
+              }}
+            >
+              {geoStatus === "checking" ? "Checking availability…" : "Trading unavailable"}
+            </button>
+          ) : !authenticated ? (
             <button
               onClick={login}
               className="w-full py-2.5 rounded-lg font-semibold text-[14px] cursor-pointer transition-all"

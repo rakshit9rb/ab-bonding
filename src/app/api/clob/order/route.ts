@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { buildL2Headers, CLOB_URL, getClobCreds } from "@/lib/clobServerAuth";
+import { buildBuilderHeaders, buildL2Headers, CLOB_URL, getClobCreds } from "@/lib/clobServerAuth";
+import { checkPolymarketGeoblock } from "@/lib/polymarketGeoblock";
 
 const ORDER_PATH = "/order";
 const ZERO_BYTES32 = "0x0000000000000000000000000000000000000000000000000000000000000000";
@@ -38,6 +39,24 @@ export async function POST(request: Request) {
     const creds = getClobCreds(owner);
     if (!creds) return NextResponse.json({ error: "CLOB auth required" }, { status: 401 });
 
+    let geo;
+    try {
+      geo = await checkPolymarketGeoblock(request.headers);
+    } catch {
+      return NextResponse.json(
+        { error: "Could not verify Polymarket availability for this region." },
+        { status: 503 },
+      );
+    }
+    if (geo.blocked) {
+      return NextResponse.json(
+        {
+          error: geo.reason ?? "Polymarket trading is not available in this region.",
+        },
+        { status: 403 },
+      );
+    }
+
     const upstreamBody = {
       order: {
         ...order,
@@ -55,6 +74,7 @@ export async function POST(request: Request) {
       headers: {
         "Content-Type": "application/json",
         ...buildL2Headers(creds, "POST", ORDER_PATH, bodyStr),
+        ...buildBuilderHeaders("POST", ORDER_PATH, bodyStr),
       },
       body: bodyStr,
     });
