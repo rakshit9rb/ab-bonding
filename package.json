@@ -14,8 +14,9 @@
   },
   "dependencies": {
     "@farcaster/mini-app-solana": "^1.1.3",
+    "@polymarket/builder-relayer-client": "0.0.9",
     "@polymarket/builder-signing-sdk": "1.0.0",
-    "@polymarket/clob-client-v2": "^1.0.3",
+    "@polymarket/clob-client-v2": "1.0.3-canary.0",
     "@privy-io/react-auth": "^3.22.1",
     "geist": "^1.7.0",
     "next": "16.2.4",

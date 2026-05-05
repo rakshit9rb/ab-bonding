@@ -1,8 +1,14 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type { ConnectedWallet } from "@privy-io/react-auth";
-import { usePrivy, useSendTransaction, useWallets } from "@privy-io/react-auth";
+import {
+  useConnectOrCreateWallet,
+  usePrivy,
+  useSendTransaction,
+  useWallets,
+} from "@privy-io/react-auth";
 import posthog from "posthog-js";
+import { encodeFunctionData, maxUint256 } from "viem";
 import { Bond, fmtVolume } from "@/lib/bonds";
 import {
   POLYGON_CHAIN_ID,
@@ -13,10 +19,10 @@ import {
 import {
   CLOB_URL,
   COLLATERAL_ONRAMP_ADDRESS,
+  COLLATERAL_TOKEN_ADDRESS,
   CONDITIONAL_TOKENS_ADDRESS,
   CTF_EXCHANGE,
   NEG_RISK_CTF_EXCHANGE,
-  approveCtfSponsored,
   calcMarketPreview,
   calcSellPreview,
   signAndPlaceOrder,
@@ -25,14 +31,22 @@ import {
   getUsdceBalance,
   getUsdceAllowance,
   getCtfApproval,
-  approveUsdcSponsored,
   approveUsdceOnrampSponsored,
+  transferUsdcSponsored,
   wrapUsdceSponsored,
   OrderBook,
   OrderPlacementResult,
   OrderPreview,
   OrderType,
 } from "@/lib/polymarket";
+import {
+  DepositWalletInfo,
+  DepositWalletCall,
+  fetchDepositWalletNonce,
+  fetchDepositWalletInfo,
+  requestDepositWalletDeploy,
+  submitSignedDepositWalletBatch,
+} from "@/lib/polymarketDepositWalletClient";
 import { getOrCreateCreds, clearCreds, ApiCredentials } from "@/lib/polymarketAuth";
 
 interface Props {
@@ -85,6 +99,9 @@ function formatOrderSuccess(result: OrderPlacementResult, orderType: OrderType) 
 
 function formatOrderError(error: string | undefined) {
   if (!error) return "Order failed";
+  if (error.includes("User rejected") || error.includes("user rejected")) {
+    return "Signature rejected. Please sign the order to place the trade.";
+  }
   if (error.includes("FOK_ORDER_NOT_FILLED_ERROR")) {
     return "FOK order was not filled. The book moved or there was not enough liquidity.";
   }
@@ -134,18 +151,136 @@ function formatLifecycleStatus(status: string | null | undefined) {
 }
 
 async function fetchClobAccountSnapshot(address: string, tokenId: string) {
-  const params = new URLSearchParams({ address, tokenId });
-  const res = await fetch(`/api/clob/account?${params.toString()}`, { cache: "no-store" });
+  const params = new URLSearchParams({ address, tokenId, signatureType: "3" });
+  const res = await fetch(`/api/clob/account?${params.toString()}`, {
+    cache: "no-store",
+  });
   const data = await res.json().catch(() => null);
   if (!res.ok) throw new Error(data?.error ?? "Could not check CLOB account balance");
   return data as ClobAccountSnapshot;
+}
+
+async function buildDepositWalletBatchDeadline() {
+  try {
+    const res = await fetch(`${CLOB_URL}/time`, { cache: "no-store" });
+    const data = await res.json().catch(async () => Number(await res.text()));
+    const serverTime = typeof data === "number" ? data : Number(data);
+    if (Number.isFinite(serverTime)) return Math.floor(serverTime + 900).toString();
+  } catch {}
+  return Math.floor(Date.now() / 1000 + 900).toString();
+}
+
+const DEPOSIT_WALLET_BATCH_TYPES = {
+  Call: [
+    { name: "target", type: "address" },
+    { name: "value", type: "uint256" },
+    { name: "data", type: "bytes" },
+  ],
+  Batch: [
+    { name: "wallet", type: "address" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+    { name: "calls", type: "Call[]" },
+  ],
+};
+
+const APPROVAL_ABI = [
+  {
+    name: "approve",
+    type: "function",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ type: "bool" }],
+  },
+  {
+    name: "setApprovalForAll",
+    type: "function",
+    inputs: [
+      { name: "operator", type: "address" },
+      { name: "approved", type: "bool" },
+    ],
+    outputs: [],
+  },
+] as const;
+
+function buildDepositWalletApprovalCall(tradeDir: TradeDir, exchange: string): DepositWalletCall {
+  if (tradeDir === "BUY") {
+    return {
+      target: COLLATERAL_TOKEN_ADDRESS,
+      value: "0",
+      data: encodeFunctionData({
+        abi: APPROVAL_ABI,
+        functionName: "approve",
+        args: [exchange as `0x${string}`, maxUint256],
+      }),
+    };
+  }
+  return {
+    target: CONDITIONAL_TOKENS_ADDRESS,
+    value: "0",
+    data: encodeFunctionData({
+      abi: APPROVAL_ABI,
+      functionName: "setApprovalForAll",
+      args: [exchange as `0x${string}`, true],
+    }),
+  };
+}
+
+async function signDepositWalletBatch({
+  wallet,
+  owner,
+  depositWallet,
+  nonce,
+  deadline,
+  calls,
+}: {
+  wallet: ConnectedWallet;
+  owner: string;
+  depositWallet: string;
+  nonce: string;
+  deadline: string;
+  calls: DepositWalletCall[];
+}) {
+  const provider = await wallet.getEthereumProvider();
+  const typedData = {
+    types: {
+      EIP712Domain: [
+        { name: "name", type: "string" },
+        { name: "version", type: "string" },
+        { name: "chainId", type: "uint256" },
+        { name: "verifyingContract", type: "address" },
+      ],
+      ...DEPOSIT_WALLET_BATCH_TYPES,
+    },
+    primaryType: "Batch",
+    domain: {
+      name: "DepositWallet",
+      version: "1",
+      chainId: POLYGON_CHAIN_ID,
+      verifyingContract: depositWallet,
+    },
+    message: {
+      wallet: depositWallet,
+      nonce,
+      deadline,
+      calls,
+    },
+  };
+  return provider.request({
+    method: "eth_signTypedData_v4",
+    params: [owner, JSON.stringify(typedData)],
+  }) as Promise<string>;
 }
 
 async function fetchOrderLifecycle(address: string, orderId?: string, tradeId?: string) {
   const params = new URLSearchParams({ address });
   if (orderId) params.set("orderId", orderId);
   if (tradeId) params.set("tradeId", tradeId);
-  const res = await fetch(`/api/clob/order-status?${params.toString()}`, { cache: "no-store" });
+  const res = await fetch(`/api/clob/order-status?${params.toString()}`, {
+    cache: "no-store",
+  });
   const data = await res.json().catch(() => null);
   if (!res.ok) throw new Error(data?.error ?? "Could not check order status");
   return data as { status?: string | null };
@@ -255,33 +390,59 @@ function OrderBookDisplay({ book }: { book: OrderBook }) {
 
 function DepositPanel({
   address,
+  depositWallet,
   wallet,
-  usdcBalance,
+  connectedPusdBalance,
+  tradingPusdBalance,
   usdceBalance,
   usdceAllowance,
+  onDeployWallet,
   onBalanceRefresh,
 }: {
   address: string;
+  depositWallet: DepositWalletInfo | null;
   wallet: ConnectedWallet;
-  usdcBalance: number | null;
+  connectedPusdBalance: number | null;
+  tradingPusdBalance: number | null;
   usdceBalance: number | null;
   usdceAllowance: number | null;
+  onDeployWallet: () => Promise<void>;
   onBalanceRefresh: () => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [wrapAmount, setWrapAmount] = useState("");
+  const [moveAmount, setMoveAmount] = useState("");
   const [wrapStatus, setWrapStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [wrapMsg, setWrapMsg] = useState("");
+  const [moveStatus, setMoveStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [moveMsg, setMoveMsg] = useState("");
+  const [deployStatus, setDeployStatus] = useState<"idle" | "loading" | "error">("idle");
   const { sendTransaction } = useSendTransaction();
   const wrapNum = parseFloat(wrapAmount || "0");
+  const moveNum = parseFloat(moveAmount || "0");
   const needsOnrampApproval = usdceAllowance !== null && wrapNum > 0 && wrapNum > usdceAllowance;
   const insufficientUsdce = usdceBalance !== null && wrapNum > 0 && wrapNum > usdceBalance;
+  const insufficientConnectedPusd =
+    connectedPusdBalance !== null && moveNum > 0 && moveNum > connectedPusdBalance;
+  const fundingAddress = depositWallet?.address ?? address;
 
   const copy = () => {
-    navigator.clipboard.writeText(address).then(() => {
+    navigator.clipboard.writeText(fundingAddress).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
+  };
+
+  const handleDeploy = async () => {
+    setDeployStatus("loading");
+    setMoveMsg("");
+    try {
+      await onDeployWallet();
+      setDeployStatus("idle");
+    } catch (e: any) {
+      setDeployStatus("error");
+      setMoveMsg(e?.message ?? "Could not deploy trading wallet");
+    }
   };
 
   const handleWrap = async () => {
@@ -313,6 +474,38 @@ function DepositPanel({
     }
   };
 
+  const handleMovePusd = async () => {
+    if (
+      !depositWallet?.address ||
+      !depositWallet.deployed ||
+      isNaN(moveNum) ||
+      moveNum <= 0 ||
+      insufficientConnectedPusd
+    ) {
+      return;
+    }
+    setMoveStatus("loading");
+    setMoveMsg("");
+    try {
+      await ensureWalletOnPolygon(wallet);
+      const rawAmount = BigInt(Math.round(moveNum * 1_000_000));
+      const result = await transferUsdcSponsored({
+        sendTransaction,
+        address,
+        to: depositWallet.address,
+        amount: rawAmount,
+      });
+      if (!result.success) throw new Error(result.error ?? "Transaction failed");
+      setMoveStatus("success");
+      setMoveMsg(`Moved $${moveNum.toFixed(2)} to trading wallet`);
+      setMoveAmount("");
+      setTimeout(onBalanceRefresh, 3000);
+    } catch (e: any) {
+      setMoveStatus("error");
+      setMoveMsg(e?.message ?? "Transaction failed");
+    }
+  };
+
   return (
     <div
       className="rounded-xl p-4 mb-4"
@@ -323,21 +516,21 @@ function DepositPanel({
           className="text-[12px] font-semibold uppercase tracking-wider"
           style={{ color: "#6b7280" }}
         >
-          Fund pUSD
+          Trading Wallet
         </span>
-        {usdcBalance !== null && (
+        {tradingPusdBalance !== null && (
           <span
             className="text-[12px] font-mono font-semibold"
-            style={{ color: usdcBalance > 0 ? "#4ade80" : "#6b7280" }}
+            style={{ color: tradingPusdBalance > 0 ? "#4ade80" : "#6b7280" }}
           >
-            ${usdcBalance.toFixed(2)} pUSD
+            ${tradingPusdBalance.toFixed(2)}
           </span>
         )}
       </div>
 
       <p className="text-[12px] mb-3" style={{ color: "#9ca3af" }}>
-        Already have <strong style={{ color: "#e5e7eb" }}>pUSD</strong>? Send it on{" "}
-        <strong style={{ color: "#e5e7eb" }}>Polygon</strong> to this wallet.
+        Trades use this Polymarket deposit wallet. Connected wallet funds cannot be spent until they
+        are moved here.
       </p>
 
       <div className="flex gap-2 mb-3">
@@ -349,7 +542,7 @@ function DepositPanel({
             color: "#9ca3af",
           }}
         >
-          {address}
+          {fundingAddress}
         </code>
         <button
           onClick={copy}
@@ -362,6 +555,92 @@ function DepositPanel({
         >
           {copied ? "Copied!" : "Copy"}
         </button>
+      </div>
+
+      {!depositWallet?.deployed && (
+        <button
+          onClick={handleDeploy}
+          disabled={deployStatus === "loading"}
+          className="w-full py-2 rounded-lg text-[12px] font-semibold cursor-pointer disabled:opacity-50 mb-3"
+          style={{
+            background: "rgba(59,130,246,0.12)",
+            border: "1px solid rgba(59,130,246,0.3)",
+            color: "#60a5fa",
+          }}
+        >
+          {deployStatus === "loading" ? "Deploying trading wallet…" : "Deploy trading wallet"}
+        </button>
+      )}
+
+      <div
+        className="rounded-lg p-3"
+        style={{ background: "#0d1117", border: "1px solid #374151" }}
+      >
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[11px] font-semibold uppercase" style={{ color: "#6b7280" }}>
+            Move pUSD to trading wallet
+          </span>
+          {connectedPusdBalance !== null && (
+            <span className="text-[11px] font-mono" style={{ color: "#9ca3af" }}>
+              Connected ${connectedPusdBalance.toFixed(2)}
+            </span>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <input
+            value={moveAmount}
+            onChange={(e) => setMoveAmount(e.target.value)}
+            type="number"
+            min="0"
+            placeholder="Amount"
+            className="min-w-0 flex-1 px-2 py-1.5 rounded-md text-[12px] font-mono outline-none"
+            style={{
+              background: "#161b22",
+              border: `1px solid ${insufficientConnectedPusd ? "rgba(220,38,38,0.4)" : "#374151"}`,
+              color: "#e5e7eb",
+            }}
+          />
+          {connectedPusdBalance !== null && connectedPusdBalance > 0 && (
+            <button
+              onClick={() => setMoveAmount(connectedPusdBalance.toFixed(2))}
+              className="px-2 py-1.5 rounded-md text-[12px] cursor-pointer"
+              style={{
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid #374151",
+                color: "#9ca3af",
+              }}
+            >
+              Max
+            </button>
+          )}
+          <button
+            onClick={handleMovePusd}
+            disabled={
+              moveStatus === "loading" ||
+              !moveNum ||
+              insufficientConnectedPusd ||
+              depositWallet?.deployed !== true
+            }
+            className="px-3 py-1.5 rounded-md text-[12px] font-semibold cursor-pointer disabled:opacity-50 shrink-0"
+            style={{
+              background: "rgba(5,150,80,0.12)",
+              border: "1px solid rgba(5,150,80,0.3)",
+              color: "#4ade80",
+            }}
+          >
+            {moveStatus === "loading" ? "Moving..." : "Move"}
+          </button>
+        </div>
+        {moveMsg && (
+          <div
+            className="text-[11px] mt-2"
+            style={{
+              color: moveStatus === "error" || deployStatus === "error" ? "#f87171" : "#4ade80",
+            }}
+          >
+            {moveMsg}
+          </div>
+        )}
       </div>
 
       <div
@@ -425,7 +704,7 @@ type Status = "idle" | "loading" | "success" | "error" | "approving" | "switchin
 export default function TradePanel({ bond, onClose }: Props) {
   const { authenticated, login, user } = usePrivy();
   const { wallets, ready: walletsReady } = useWallets();
-  const { sendTransaction } = useSendTransaction();
+  const { connectOrCreateWallet } = useConnectOrCreateWallet();
 
   const [outcome, setOutcome] = useState<Outcome>(bond.outcome);
   const [tradeDir, setTradeDir] = useState<TradeDir>("BUY");
@@ -435,6 +714,7 @@ export default function TradePanel({ bond, onClose }: Props) {
   const [book, setBook] = useState<OrderBook | null>(null);
   const [preview, setPreview] = useState<OrderPreview | null>(null);
   const [usdcBalance, setUsdcBalance] = useState<number | null>(null);
+  const [tradingUsdcBalance, setTradingUsdcBalance] = useState<number | null>(null);
   const [usdceBalance, setUsdceBalance] = useState<number | null>(null);
   const [usdceAllowance, setUsdceAllowance] = useState<number | null>(null);
   const [collateralAllowance, setCollateralAllowance] = useState<number | null>(null);
@@ -446,6 +726,7 @@ export default function TradePanel({ bond, onClose }: Props) {
   const [geoStatus, setGeoStatus] = useState<GeoStatus>("checking");
   const [geoMessage, setGeoMessage] = useState("");
   const [showDeposit, setShowDeposit] = useState(false);
+  const [depositWallet, setDepositWallet] = useState<DepositWalletInfo | null>(null);
   const previewSig = useRef("");
 
   const wallet = useMemo(
@@ -465,6 +746,22 @@ export default function TradePanel({ bond, onClose }: Props) {
   const midPrice = lastPrice ?? (bestAsk && bestBid ? (bestAsk + bestBid) / 2 : bond.price);
 
   const onPolygon = chainId === POLYGON_CHAIN_ID;
+
+  const ensureDepositWalletInfo = useCallback(async () => {
+    if (!wallet?.address) {
+      setDepositWallet(null);
+      return null;
+    }
+    const next = await fetchDepositWalletInfo(wallet.address);
+    setDepositWallet(next);
+    return next;
+  }, [wallet?.address]);
+
+  const handleDeployDepositWallet = useCallback(async () => {
+    if (!wallet?.address) return;
+    await requestDepositWalletDeploy(wallet.address);
+    await ensureDepositWalletInfo();
+  }, [wallet?.address, ensureDepositWalletInfo]);
 
   const metricProps = useCallback(
     (overrides: Record<string, unknown> = {}) => ({
@@ -533,26 +830,43 @@ export default function TradePanel({ bond, onClose }: Props) {
   const refreshBalances = useCallback(async () => {
     if (!wallet?.address) {
       setUsdcBalance(null);
+      setTradingUsdcBalance(null);
       setUsdceBalance(null);
       setUsdceAllowance(null);
       setCollateralAllowance(null);
       setCtfApproval(null);
       return;
     }
-    const [balance, usdce, nextUsdceAllowance, nextCollateralAllowance, nextCtfApproval] =
-      await Promise.all([
-        getUsdcBalance(wallet.address),
-        getUsdceBalance(wallet.address),
-        getUsdceAllowance(wallet.address, COLLATERAL_ONRAMP_ADDRESS),
-        getUsdcAllowance(wallet.address, CONDITIONAL_TOKENS_ADDRESS),
-        getCtfApproval(wallet.address, exchange),
-      ]);
+    const currentDepositWallet =
+      depositWallet ?? (await ensureDepositWalletInfo().catch(() => null));
+    const [
+      balance,
+      tradingBalance,
+      usdce,
+      nextUsdceAllowance,
+      nextCollateralAllowance,
+      nextCtfApproval,
+    ] = await Promise.all([
+      getUsdcBalance(wallet.address),
+      currentDepositWallet?.address
+        ? getUsdcBalance(currentDepositWallet.address)
+        : Promise.resolve(null),
+      getUsdceBalance(wallet.address),
+      getUsdceAllowance(wallet.address, COLLATERAL_ONRAMP_ADDRESS),
+      currentDepositWallet?.address
+        ? getUsdcAllowance(currentDepositWallet.address, exchange)
+        : Promise.resolve(0),
+      currentDepositWallet?.address
+        ? getCtfApproval(currentDepositWallet.address, exchange)
+        : Promise.resolve(false),
+    ]);
     setUsdcBalance(balance);
+    setTradingUsdcBalance(tradingBalance);
     setUsdceBalance(usdce);
     setUsdceAllowance(nextUsdceAllowance);
     setCollateralAllowance(nextCollateralAllowance);
     setCtfApproval(nextCtfApproval);
-  }, [wallet?.address, exchange]);
+  }, [wallet?.address, exchange, depositWallet, ensureDepositWalletInfo]);
 
   useEffect(() => {
     posthog?.capture(
@@ -609,10 +923,12 @@ export default function TradePanel({ bond, onClose }: Props) {
     if (!wallet?.address) {
       setChainId(null);
       setUsdcBalance(null);
+      setTradingUsdcBalance(null);
       setUsdceBalance(null);
       setUsdceAllowance(null);
       setCollateralAllowance(null);
       setCtfApproval(null);
+      setDepositWallet(null);
       return;
     }
     let cleanup: (() => void) | undefined;
@@ -745,41 +1061,50 @@ export default function TradePanel({ bond, onClose }: Props) {
     posthog?.capture("usdc_approval_started", metricProps());
     captureServer("usdc_approval_started", metricProps());
     setStatus("approving");
-    setStatusMsg(tradeDir === "BUY" ? "Approving pUSD…" : "Approving outcome tokens…");
+    setStatusMsg(
+      tradeDir === "BUY"
+        ? "Approving pUSD from trading wallet…"
+        : "Approving outcome tokens from trading wallet…",
+    );
     try {
       await ensureWalletOnPolygon(wallet);
       setChainId(POLYGON_CHAIN_ID);
-      const result =
-        tradeDir === "BUY"
-          ? await approveUsdcSponsored(sendTransaction, wallet.address, CONDITIONAL_TOKENS_ADDRESS)
-          : await approveCtfSponsored(sendTransaction, wallet.address, exchange);
-      if (result.success) {
-        posthog?.capture("usdc_approval_succeeded", metricProps());
-        captureServer("usdc_approval_succeeded", metricProps());
-        setStatusMsg("Approved! Refreshing…");
-        // Wait a couple seconds for the tx to propagate then recheck
-        setTimeout(() => {
-          refreshBalances().then(() => {
-            setStatus("idle");
-            setStatusMsg("");
-          });
-        }, 3000);
-      } else {
-        posthog?.capture(
-          "usdc_approval_failed",
-          metricProps({
-            error_message: result.error ?? "Approval failed",
-          }),
-        );
-        captureServer(
-          "usdc_approval_failed",
-          metricProps({
-            error_message: result.error ?? "Approval failed",
-          }),
-        );
-        setStatus("error");
-        setStatusMsg(result.error ?? "Approval failed");
+      const activeDepositWallet = await ensureDepositWalletInfo();
+      if (!activeDepositWallet) throw new Error("Could not resolve Polymarket deposit wallet");
+      if (!activeDepositWallet.deployed) {
+        await requestDepositWalletDeploy(wallet.address);
+        await ensureDepositWalletInfo();
+        throw new Error("Trading wallet deployment started. Try approval again in a moment.");
       }
+      const calls = [buildDepositWalletApprovalCall(tradeDir, exchange)];
+      const nonce = await fetchDepositWalletNonce(wallet.address);
+      const deadline = await buildDepositWalletBatchDeadline();
+      const signature = await signDepositWalletBatch({
+        wallet,
+        owner: wallet.address,
+        depositWallet: activeDepositWallet.address,
+        nonce,
+        deadline,
+        calls,
+      });
+      await submitSignedDepositWalletBatch({
+        owner: wallet.address,
+        depositWallet: activeDepositWallet.address,
+        nonce,
+        deadline,
+        signature,
+        calls,
+      });
+      posthog?.capture("usdc_approval_succeeded", metricProps());
+      captureServer("usdc_approval_succeeded", metricProps());
+      setStatusMsg("Approval submitted. Refreshing trading balances…");
+      if (tokenId) await fetchClobAccountSnapshot(wallet.address, tokenId).catch(() => null);
+      setTimeout(() => {
+        refreshBalances().then(() => {
+          setStatus("idle");
+          setStatusMsg("");
+        });
+      }, 3000);
     } catch (e: any) {
       posthog?.capture(
         "usdc_approval_failed",
@@ -800,11 +1125,12 @@ export default function TradePanel({ bond, onClose }: Props) {
     wallet,
     tradeDir,
     exchange,
-    sendTransaction,
     refreshBalances,
     posthog,
     metricProps,
     captureServer,
+    ensureDepositWalletInfo,
+    tokenId,
   ]);
 
   // Place order
@@ -813,7 +1139,11 @@ export default function TradePanel({ bond, onClose }: Props) {
       login();
       return;
     }
-    if (!wallet || !tokenId || !preview) return;
+    if (!wallet) {
+      connectOrCreateWallet();
+      return;
+    }
+    if (!tokenId || !preview) return;
     if (geoStatus !== "allowed") {
       setStatus("error");
       setStatusMsg(geoMessage || "Could not verify Polymarket availability for this region.");
@@ -838,6 +1168,19 @@ export default function TradePanel({ bond, onClose }: Props) {
       const activeCreds = await ensureCreds(wc);
       if (!activeCreds) return;
 
+      setStatusMsg("Preparing Polymarket deposit wallet…");
+      const activeDepositWallet = await ensureDepositWalletInfo();
+      if (!activeDepositWallet) throw new Error("Could not resolve Polymarket deposit wallet");
+      if (!activeDepositWallet.deployed) {
+        await requestDepositWalletDeploy(wallet.address);
+        await ensureDepositWalletInfo();
+        setStatus("error");
+        setStatusMsg(
+          `Polymarket deposit wallet deployment started. Wait a moment, then fund ${shortHash(activeDepositWallet.address)} and try again.`,
+        );
+        return;
+      }
+
       const accountSnapshot = await fetchClobAccountSnapshot(wallet.address, tokenId);
       const requiredAmount = tradeDir === "BUY" ? parseFloat(amount || "0") : preview.shares;
       const availableAmount =
@@ -847,7 +1190,7 @@ export default function TradePanel({ bond, onClose }: Props) {
       if (requiredAmount > availableAmount + 0.000001) {
         const message =
           tradeDir === "BUY"
-            ? `Insufficient available pUSD after open orders. Available: $${availableAmount.toFixed(2)}.`
+            ? `Insufficient pUSD in trading wallet ${shortHash(activeDepositWallet.address)}. Available: $${availableAmount.toFixed(2)}.`
             : `Insufficient available ${outcome} shares after open orders. Available: ${availableAmount.toFixed(2)}.`;
         posthog?.capture("trade_failed", {
           ...tradeProps,
@@ -878,6 +1221,7 @@ export default function TradePanel({ bond, onClose }: Props) {
         negRisk: bond.negRisk,
         tickSize: book?.tick_size,
         userUSDCBalance: tradeDir === "BUY" ? accountSnapshot.collateral.available : usdcBalance,
+        depositWalletAddress: activeDepositWallet.address,
       });
 
       if (result.success) {
@@ -947,6 +1291,7 @@ export default function TradePanel({ bond, onClose }: Props) {
   }, [
     authenticated,
     login,
+    connectOrCreateWallet,
     wallet,
     tokenId,
     preview,
@@ -958,6 +1303,7 @@ export default function TradePanel({ bond, onClose }: Props) {
     ensureCreds,
     creds,
     refreshBalances,
+    ensureDepositWalletInfo,
     posthog,
     metricProps,
     captureServer,
@@ -965,6 +1311,7 @@ export default function TradePanel({ bond, onClose }: Props) {
     geoMessage,
     geoStatus,
     usdcBalance,
+    tradingUsdcBalance,
   ]);
 
   const usdcNum = parseFloat(amount || "0");
@@ -973,8 +1320,10 @@ export default function TradePanel({ bond, onClose }: Props) {
     tradeDir === "BUY"
       ? collateralAllowance !== null && usdcNum > collateralAllowance
       : ctfApproval !== true;
-  const insufficientFunds = tradeDir === "BUY" && usdcBalance !== null && usdcNum > usdcBalance;
-  const approvalLabel = tradeDir === "BUY" ? "Approve pUSD" : "Approve outcome tokens";
+  const insufficientFunds =
+    tradeDir === "BUY" && tradingUsdcBalance !== null && usdcNum > tradingUsdcBalance;
+  const approvalLabel =
+    tradeDir === "BUY" ? "Approve trading wallet pUSD" : "Approve trading wallet shares";
   const isLoading =
     status === "loading" ||
     status === "approving" ||
@@ -1069,10 +1418,13 @@ export default function TradePanel({ bond, onClose }: Props) {
           {showDeposit && wallet?.address && (
             <DepositPanel
               address={wallet.address}
+              depositWallet={depositWallet}
               wallet={wallet}
-              usdcBalance={usdcBalance}
+              connectedPusdBalance={usdcBalance}
+              tradingPusdBalance={tradingUsdcBalance}
               usdceBalance={usdceBalance}
               usdceAllowance={usdceAllowance}
+              onDeployWallet={handleDeployDepositWallet}
               onBalanceRefresh={refreshBalances}
             />
           )}
@@ -1087,11 +1439,11 @@ export default function TradePanel({ bond, onClose }: Props) {
                 />
                 <span style={{ color: "#6b7280" }}>{onPolygon ? "Polygon" : "Wrong network"}</span>
               </div>
-              {usdcBalance !== null && (
+              {tradingUsdcBalance !== null && (
                 <span style={{ color: "#6b7280" }}>
-                  Balance:{" "}
+                  Trading wallet:{" "}
                   <span className="font-mono" style={{ color: "#9ca3af" }}>
-                    ${usdcBalance.toFixed(2)}
+                    ${tradingUsdcBalance.toFixed(2)}
                   </span>
                 </span>
               )}
@@ -1352,7 +1704,43 @@ export default function TradePanel({ bond, onClose }: Props) {
             >
               Sign in to Trade
             </button>
-          ) : !onPolygon && chainId !== null ? null /* handled above */ : needsApproval ? (
+          ) : !walletsReady ? (
+            <button
+              disabled
+              className="w-full py-2.5 rounded-lg font-semibold text-[13px] disabled:opacity-50"
+              style={{
+                background: "rgba(255,255,255,0.08)",
+                color: "#9ca3af",
+                border: "1px solid #1f2937",
+              }}
+            >
+              Loading wallet…
+            </button>
+          ) : !wallet ? (
+            <button
+              onClick={connectOrCreateWallet}
+              className="w-full py-2.5 rounded-lg font-semibold text-[14px] cursor-pointer transition-all"
+              style={{
+                background: "var(--accent)",
+                color: "#fff",
+                border: "none",
+              }}
+            >
+              Connect wallet to trade
+            </button>
+          ) : !onPolygon && chainId !== null ? null /* handled above */ : insufficientFunds ? (
+            <button
+              onClick={() => setShowDeposit(true)}
+              className="w-full py-2.5 rounded-lg font-semibold text-[13px] cursor-pointer"
+              style={{
+                background: "rgba(220,38,38,0.1)",
+                color: "#f87171",
+                border: "1px solid rgba(220,38,38,0.25)",
+              }}
+            >
+              Insufficient trading balance — Fund wallet
+            </button>
+          ) : needsApproval ? (
             <button
               onClick={handleApprove}
               disabled={isLoading}
@@ -1364,18 +1752,6 @@ export default function TradePanel({ bond, onClose }: Props) {
               }}
             >
               {status === "approving" ? "Approving…" : approvalLabel}
-            </button>
-          ) : insufficientFunds ? (
-            <button
-              onClick={() => setShowDeposit(true)}
-              className="w-full py-2.5 rounded-lg font-semibold text-[13px] cursor-pointer"
-              style={{
-                background: "rgba(220,38,38,0.1)",
-                color: "#f87171",
-                border: "1px solid rgba(220,38,38,0.25)",
-              }}
-            >
-              Insufficient balance — Deposit pUSD
             </button>
           ) : (
             <button

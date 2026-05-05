@@ -15,6 +15,8 @@ import { PINNED_MARKETS } from "@/lib/constants";
 import { getPrimaryWallet } from "@/lib/privyWallet";
 import { getResolvedTheme, setThemePreference } from "@/lib/theme";
 import BondRow from "./BondRow";
+import { getUsdcBalance } from "@/lib/polymarket";
+import { DepositWalletInfo, fetchDepositWalletInfo } from "@/lib/polymarketDepositWalletClient";
 
 const TIME_OPTS: { value: TimeFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -124,6 +126,7 @@ function PortfolioNavLink() {
   const { authenticated } = usePrivy();
   const { wallets, ready: walletsReady } = useWallets();
   const [balance, setBalance] = useState<number | null>(null);
+  const [depositWallet, setDepositWallet] = useState<DepositWalletInfo | null>(null);
   const wallet = useMemo(
     () => (walletsReady ? getPrimaryWallet(wallets) : null),
     [wallets, walletsReady],
@@ -131,11 +134,27 @@ function PortfolioNavLink() {
   const address = wallet?.address;
 
   useEffect(() => {
-    if (!authenticated || !address) return;
-    fetch(`/api/balance?address=${address}`)
-      .then((r) => r.json())
-      .then((d) => setBalance(typeof d.balance === "number" ? d.balance : null))
-      .catch(() => {});
+    if (!authenticated || !address) {
+      setDepositWallet(null);
+      setBalance(null);
+      return;
+    }
+    let cancelled = false;
+    fetchDepositWalletInfo(address)
+      .then(async (info) => {
+        const nextBalance = await getUsdcBalance(info.address);
+        if (cancelled) return;
+        setDepositWallet(info);
+        setBalance(nextBalance);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDepositWallet(null);
+        setBalance(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [authenticated, address]);
 
   return (
@@ -147,7 +166,7 @@ function PortfolioNavLink() {
       <span className="text-[14px] font-semibold" style={{ color: "var(--accent)" }}>
         Portfolio
       </span>
-      {authenticated && balance !== null && (
+      {authenticated && depositWallet && balance !== null && (
         <span className="text-[13px] font-bold font-mono" style={{ color: "#4ade80" }}>
           ${balance.toFixed(2)}
         </span>
@@ -162,6 +181,7 @@ function AuthButton() {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [balance, setBalance] = useState<number | null>(null);
+  const [depositWallet, setDepositWallet] = useState<DepositWalletInfo | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   const wallet = useMemo(
@@ -183,15 +203,28 @@ function AuthButton() {
   // Fetch balance when dropdown opens
   useEffect(() => {
     if (!open || !address) return;
-    fetch(`/api/balance?address=${address}`)
-      .then((r) => r.json())
-      .then((d) => setBalance(typeof d.balance === "number" ? d.balance : null))
-      .catch(() => {});
+    let cancelled = false;
+    fetchDepositWalletInfo(address)
+      .then(async (info) => {
+        const nextBalance = await getUsdcBalance(info.address);
+        if (cancelled) return;
+        setDepositWallet(info);
+        setBalance(nextBalance);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDepositWallet(null);
+        setBalance(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [open, address]);
 
   const copy = () => {
-    if (!address) return;
-    navigator.clipboard.writeText(address).then(() => {
+    const fundingAddress = depositWallet?.address;
+    if (!fundingAddress) return;
+    navigator.clipboard.writeText(fundingAddress).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
@@ -245,7 +278,7 @@ function AuthButton() {
               className="text-[11px] font-semibold uppercase tracking-widest mb-1"
               style={{ color: "var(--text-tertiary)" }}
             >
-              pUSD Balance
+              Trading Wallet pUSD
             </div>
             <div
               className="text-[32px] font-bold font-mono leading-none mb-0.5"
@@ -254,7 +287,7 @@ function AuthButton() {
               {balance !== null ? `$${balance.toFixed(2)}` : "—"}
             </div>
             <div className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-              on Polygon
+              Polymarket deposit wallet on Polygon
             </div>
           </div>
 
@@ -264,15 +297,15 @@ function AuthButton() {
               className="text-[11px] font-semibold uppercase tracking-widest mb-2"
               style={{ color: "var(--text-tertiary)" }}
             >
-              Deposit address · Polygon
+              Trading wallet address · Polygon
             </div>
-            {address ? (
+            {depositWallet?.address ? (
               <>
                 <div
                   className="font-mono text-[12px] break-all mb-3 leading-relaxed"
                   style={{ color: "var(--text-secondary)" }}
                 >
-                  {address}
+                  {depositWallet.address}
                 </div>
                 <button
                   onClick={copy}
@@ -289,9 +322,17 @@ function AuthButton() {
                   className="text-[11px] mt-2 text-center leading-relaxed"
                   style={{ color: "var(--text-tertiary)" }}
                 >
-                  Send <strong style={{ color: "var(--text-secondary)" }}>pUSD</strong> on{" "}
-                  <strong style={{ color: "var(--text-secondary)" }}>Polygon</strong> only
+                  Orders use this address. pUSD in the connected wallet will not trade until moved
+                  here.
                 </p>
+                {address && (
+                  <p
+                    className="text-[11px] mt-2 text-center font-mono"
+                    style={{ color: "var(--text-tertiary)" }}
+                  >
+                    Signer {address.slice(0, 6)}…{address.slice(-4)}
+                  </p>
+                )}
               </>
             ) : (
               <p className="text-[13px]" style={{ color: "var(--text-tertiary)" }}>

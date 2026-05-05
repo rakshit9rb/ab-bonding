@@ -34,10 +34,16 @@ async function readJson(res: Response) {
 async function getBalanceAllowance(
   creds: NonNullable<ReturnType<typeof getClobCreds>>,
   params: Record<string, string>,
+  signatureType: "0" | "3",
 ) {
+  if (signatureType === "3") {
+    await fetchClobAuthed(creds, "GET", "/balance-allowance/update", {
+      params: { ...params, signature_type: signatureType },
+    }).catch(() => null);
+  }
   const data = await readJson(
     await fetchClobAuthed(creds, "GET", "/balance-allowance", {
-      params: { ...params, signature_type: "0" },
+      params: { ...params, signature_type: signatureType },
     }),
   );
   return {
@@ -68,13 +74,18 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const address = url.searchParams.get("address");
     const tokenId = url.searchParams.get("tokenId") ?? undefined;
+    const signatureType = url.searchParams.get("signatureType") === "3" ? "3" : "0";
     const creds = getClobCreds(address);
     if (!creds) return NextResponse.json({ error: "CLOB auth required" }, { status: 401 });
 
     const [collateral, conditional, openOrders] = await Promise.all([
-      getBalanceAllowance(creds, { asset_type: "COLLATERAL" }),
+      getBalanceAllowance(creds, { asset_type: "COLLATERAL" }, signatureType),
       tokenId
-        ? getBalanceAllowance(creds, { asset_type: "CONDITIONAL", token_id: tokenId })
+        ? getBalanceAllowance(
+            creds,
+            { asset_type: "CONDITIONAL", token_id: tokenId },
+            signatureType,
+          )
         : Promise.resolve(null),
       getOpenOrders(creds),
     ]);

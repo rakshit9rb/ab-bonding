@@ -66,15 +66,24 @@ export async function createClobCreds({
     POLY_NONCE: nonce,
   };
 
-  let res = await fetch(`${CLOB_URL}/auth/api-key`, {
-    method: "POST",
-    headers,
-  });
-  if (!res.ok) {
-    res = await fetch(`${CLOB_URL}/auth/derive-api-key`, {
-      method: "GET",
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  let res: Response;
+  try {
+    res = await fetch(`${CLOB_URL}/auth/api-key`, {
+      method: "POST",
       headers,
+      signal: controller.signal,
     });
+    if (!res.ok) {
+      res = await fetch(`${CLOB_URL}/auth/derive-api-key`, {
+        method: "GET",
+        headers,
+        signal: controller.signal,
+      });
+    }
+  } finally {
+    clearTimeout(timeout);
   }
   if (!res.ok) return null;
 

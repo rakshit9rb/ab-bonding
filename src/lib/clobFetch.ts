@@ -5,7 +5,7 @@ import {
   type ApiCredentials,
 } from "@/lib/clobServerAuth";
 
-export function createClobPath(path: string, params?: Record<string, string | undefined>) {
+function createClobPath(path: string, params?: Record<string, string | undefined>) {
   const url = new URL(`${CLOB_URL}${path}`);
   for (const [key, value] of Object.entries(params ?? {})) {
     if (value !== undefined && value !== "") url.searchParams.set(key, value);

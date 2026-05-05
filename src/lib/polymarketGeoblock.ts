@@ -1,4 +1,4 @@
-export interface GeoblockResult {
+interface GeoblockResult {
   blocked: boolean;
   source: "headers" | "polymarket";
   country?: string;
@@ -62,7 +62,7 @@ function normalizeRegion(region: string) {
   return region.trim().toUpperCase();
 }
 
-export function geoblockFromHeaders(headers: Headers): GeoblockResult | null {
+function geoblockFromHeaders(headers: Headers): GeoblockResult | null {
   const country = normalizeCountry(
     headerValue(headers, [
       "x-vercel-ip-country",

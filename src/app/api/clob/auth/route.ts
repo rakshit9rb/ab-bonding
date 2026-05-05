@@ -6,8 +6,18 @@ export async function POST(request: Request) {
     const creds = await createClobCreds(await request.json());
     if (!creds) return NextResponse.json({ ok: false }, { status: 401 });
     return NextResponse.json({ ok: true, address: creds.address });
-  } catch {
-    return NextResponse.json({ ok: false }, { status: 500 });
+  } catch (error) {
+    console.error("[clob/auth] auth failed", error);
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          process.env.NODE_ENV === "development" && error instanceof Error
+            ? error.message
+            : undefined,
+      },
+      { status: 500 },
+    );
   }
 }
 

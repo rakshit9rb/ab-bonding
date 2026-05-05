@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { buildBuilderHeaders, buildL2Headers, CLOB_URL, getClobCreds } from "@/lib/clobServerAuth";
+import { derivePolymarketDepositWallet, normalizeAddress } from "@/lib/polymarketDepositWallet";
 import { checkPolymarketGeoblock } from "@/lib/polymarketGeoblock";
 
 const ORDER_PATH = "/order";
 const ZERO_BYTES32 = "0x0000000000000000000000000000000000000000000000000000000000000000";
-const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 const BYTES32_RE = /^0x[0-9a-fA-F]{64}$/;
 
 function isStringInt(value: unknown) {
@@ -14,16 +14,18 @@ function isStringInt(value: unknown) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const owner = typeof body.owner === "string" ? body.owner.toLowerCase() : "";
+    const owner = normalizeAddress(body.owner) ?? "";
     const order =
       typeof body.order === "object" && body.order ? (body.order as Record<string, unknown>) : null;
     const signer = typeof order?.signer === "string" ? order.signer.toLowerCase() : "";
     const maker = typeof order?.maker === "string" ? order.maker.toLowerCase() : "";
-    if (!owner || !order || owner !== signer || owner !== maker) {
+    const signatureType = Number(order?.signatureType);
+    const depositWallet = owner ? derivePolymarketDepositWallet(owner).toLowerCase() : "";
+    const validEoaOrder = signatureType === 0 && owner === signer && owner === maker;
+    const validDepositWalletOrder =
+      signatureType === 3 && depositWallet === signer && depositWallet === maker;
+    if (!owner || !order || (!validEoaOrder && !validDepositWalletOrder)) {
       return NextResponse.json({ error: "Invalid order owner" }, { status: 400 });
-    }
-    if (!ADDRESS_RE.test(owner)) {
-      return NextResponse.json({ error: "Invalid wallet address" }, { status: 400 });
     }
     if ("nonce" in order || "feeRateBps" in order || "taker" in order) {
       return NextResponse.json({ error: "V1 order fields are not supported" }, { status: 400 });
@@ -69,15 +71,18 @@ export async function POST(request: Request) {
       postOnly: body.postOnly === true,
     };
     const bodyStr = JSON.stringify(upstreamBody);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
     const res = await fetch(`${CLOB_URL}${ORDER_PATH}`, {
       method: "POST",
+      signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
         ...buildL2Headers(creds, "POST", ORDER_PATH, bodyStr),
         ...buildBuilderHeaders("POST", ORDER_PATH, bodyStr),
       },
       body: bodyStr,
-    });
+    }).finally(() => clearTimeout(timeout));
     const text = await res.text();
     return new NextResponse(text, {
       status: res.status,
@@ -85,7 +90,16 @@ export async function POST(request: Request) {
         "Content-Type": res.headers.get("Content-Type") ?? "application/json",
       },
     });
-  } catch {
-    return NextResponse.json({ error: "Order failed" }, { status: 500 });
+  } catch (error) {
+    console.error("[clob/order] order failed", error);
+    return NextResponse.json(
+      {
+        error:
+          process.env.NODE_ENV === "development" && error instanceof Error
+            ? error.message
+            : "Order failed",
+      },
+      { status: 500 },
+    );
   }
 }

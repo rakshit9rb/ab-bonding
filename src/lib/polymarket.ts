@@ -3,6 +3,7 @@ import {
   ClobClient,
   OrderType as ClobOrderType,
   Side as ClobSide,
+  SignatureTypeV2,
   orderToJsonV2,
 } from "@polymarket/clob-client-v2";
 import type { CreateOrderOptions, SignedOrder, TickSize } from "@polymarket/clob-client-v2";
@@ -18,7 +19,7 @@ export const CTF_EXCHANGE = "0xE111180000d2663C0091e4f400237545B87B996B" as cons
 export const NEG_RISK_CTF_EXCHANGE = "0xe2222d279d744050d28e00520010520000310F59" as const;
 export const CONDITIONAL_TOKENS_ADDRESS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045" as const;
 export const COLLATERAL_TOKEN_ADDRESS = "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB" as const; // pUSD on Polygon
-export const USDCE_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174" as const;
+const USDCE_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174" as const;
 export const COLLATERAL_ONRAMP_ADDRESS = "0x93070a847efEf7F70739046A929D47a521F5B8ee" as const;
 
 type Side = "BUY" | "SELL";
@@ -239,18 +240,6 @@ const ERC20_ABI = [
   },
 ] as const;
 
-const ERC1155_ABI = [
-  {
-    name: "setApprovalForAll",
-    type: "function",
-    inputs: [
-      { name: "operator", type: "address" },
-      { name: "approved", type: "bool" },
-    ],
-    outputs: [],
-  },
-] as const;
-
 const COLLATERAL_ONRAMP_ABI = [
   {
     name: "wrap",
@@ -294,20 +283,6 @@ async function approveErc20Sponsored({
   }
 }
 
-// ── Sponsored collateral approval via Privy gas sponsorship ──────────────────
-export async function approveUsdcSponsored(
-  sendTransaction: SponsoredTransactionSender,
-  address: string,
-  spender: string,
-): Promise<{ success: boolean; error?: string }> {
-  return approveErc20Sponsored({
-    sendTransaction,
-    address,
-    token: COLLATERAL_TOKEN_ADDRESS,
-    spender,
-  });
-}
-
 export async function approveUsdceOnrampSponsored(
   sendTransaction: SponsoredTransactionSender,
   address: string,
@@ -318,30 +293,6 @@ export async function approveUsdceOnrampSponsored(
     token: USDCE_ADDRESS,
     spender: COLLATERAL_ONRAMP_ADDRESS,
   });
-}
-
-export async function approveCtfSponsored(
-  sendTransaction: SponsoredTransactionSender,
-  address: string,
-  operator: string,
-): Promise<{ success: boolean; error?: string }> {
-  try {
-    const { hash } = await sendTransaction(
-      {
-        to: CONDITIONAL_TOKENS_ADDRESS,
-        data: encodeFunctionData({
-          abi: ERC1155_ABI,
-          functionName: "setApprovalForAll",
-          args: [operator as `0x${string}`, true],
-        }),
-        chainId: POLYGON_CHAIN_ID,
-      },
-      { sponsor: true, address },
-    );
-    return { success: true, error: hash };
-  } catch (e: any) {
-    return { success: false, error: e?.message ?? "Approval failed" };
-  }
 }
 
 export async function wrapUsdceSponsored({
@@ -432,6 +383,7 @@ export async function signAndPlaceOrder({
   negRisk,
   tickSize,
   userUSDCBalance,
+  depositWalletAddress,
 }: {
   walletClient: WalletClient;
   address: string;
@@ -444,6 +396,7 @@ export async function signAndPlaceOrder({
   negRisk: boolean;
   tickSize?: string;
   userUSDCBalance?: number | null;
+  depositWalletAddress?: string;
 }): Promise<OrderPlacementResult> {
   try {
     const builder = getBuilderCode();
@@ -451,6 +404,12 @@ export async function signAndPlaceOrder({
       host: CLOB_URL,
       chain: POLYGON_CHAIN_ID,
       signer: walletClient,
+      ...(depositWalletAddress
+        ? {
+            signatureType: SignatureTypeV2.POLY_1271,
+            funderAddress: depositWalletAddress,
+          }
+        : {}),
       builderConfig: builder === ZERO_BYTES32 ? undefined : { builderCode: builder },
     });
     const sdkSide = side === "BUY" ? ClobSide.BUY : ClobSide.SELL;

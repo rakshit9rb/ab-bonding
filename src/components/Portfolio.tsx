@@ -4,6 +4,11 @@ import type { ConnectedWallet } from "@privy-io/react-auth";
 import { usePrivy, useSendTransaction, useWallets } from "@privy-io/react-auth";
 import { getUsdcBalance, transferUsdcSponsored } from "@/lib/polymarket";
 import { ensureWalletOnPolygon, getPrimaryWallet } from "@/lib/privyWallet";
+import {
+  DepositWalletInfo,
+  fetchDepositWalletInfo,
+  requestDepositWalletDeploy,
+} from "@/lib/polymarketDepositWalletClient";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -68,59 +73,73 @@ function PnlBadge({ value, pct }: { value: number; pct?: number }) {
   );
 }
 
-// ─── Funds Panel (Deposit / Withdraw) ────────────────────────────────────────
+// ─── Funds Panel ─────────────────────────────────────────────────────────────
 
 function FundsPanel({
   address,
+  depositWallet,
   wallet,
-  usdcBalance,
+  connectedPusdBalance,
+  tradingPusdBalance,
+  onDeployWallet,
   onBalanceRefresh,
 }: {
   address: string;
+  depositWallet: DepositWalletInfo | null;
   wallet: ConnectedWallet;
-  usdcBalance: number | null;
+  connectedPusdBalance: number | null;
+  tradingPusdBalance: number | null;
+  onDeployWallet: () => Promise<void>;
   onBalanceRefresh: () => void;
 }) {
-  const [tab, setTab] = useState<"deposit" | "withdraw">("deposit");
   const [copied, setCopied] = useState(false);
-  const [withdrawTo, setWithdrawTo] = useState("");
-  const [withdrawAmt, setWithdrawAmt] = useState("");
+  const [moveAmount, setMoveAmount] = useState("");
   const [txStatus, setTxStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [txMsg, setTxMsg] = useState("");
+  const [deployStatus, setDeployStatus] = useState<"idle" | "loading" | "error">("idle");
   const { sendTransaction } = useSendTransaction();
+  const fundingAddress = depositWallet?.address ?? address;
+  const moveNum = parseFloat(moveAmount || "0");
+  const insufficientConnectedPusd =
+    connectedPusdBalance !== null && moveNum > 0 && moveNum > connectedPusdBalance;
 
   const copy = () => {
-    navigator.clipboard.writeText(address).then(() => {
+    navigator.clipboard.writeText(fundingAddress).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
   };
 
-  const handleWithdraw = async () => {
-    if (!wallet || !withdrawTo || !withdrawAmt) return;
-    if (!/^0x[0-9a-fA-F]{40}$/.test(withdrawTo)) {
-      setTxStatus("error");
-      setTxMsg("Enter a valid Polygon address");
-      return;
+  const handleDeploy = async () => {
+    setDeployStatus("loading");
+    setTxMsg("");
+    try {
+      await onDeployWallet();
+      setDeployStatus("idle");
+    } catch (e: any) {
+      setDeployStatus("error");
+      setTxMsg(e?.message ?? "Could not deploy trading wallet");
     }
-    const amt = parseFloat(withdrawAmt);
-    if (isNaN(amt) || amt <= 0) return;
+  };
+
+  const handleMove = async () => {
+    if (!wallet || !depositWallet?.address || !depositWallet.deployed) return;
+    if (isNaN(moveNum) || moveNum <= 0 || insufficientConnectedPusd) return;
     setTxStatus("loading");
     setTxMsg("");
     try {
       await ensureWalletOnPolygon(wallet);
-      const rawAmt = BigInt(Math.round(amt * 1_000_000));
+      const rawAmt = BigInt(Math.round(moveNum * 1_000_000));
       const result = await transferUsdcSponsored({
         sendTransaction,
         address,
-        to: withdrawTo,
+        to: depositWallet.address,
         amount: rawAmt,
       });
       if (!result.success) throw new Error(result.error ?? "Transaction failed");
       setTxStatus("success");
-      setTxMsg(`Sent $${amt.toFixed(2)} pUSD`);
-      setWithdrawAmt("");
-      setWithdrawTo("");
+      setTxMsg(`Moved $${moveNum.toFixed(2)} to trading wallet`);
+      setMoveAmount("");
       setTimeout(onBalanceRefresh, 3000);
     } catch (e: any) {
       setTxStatus("error");
@@ -133,153 +152,150 @@ function FundsPanel({
       className="rounded-xl mb-6 overflow-hidden"
       style={{ background: "#161b22", border: "1px solid #1f2937" }}
     >
-      {/* Tabs */}
-      <div className="flex" style={{ borderBottom: "1px solid #1f2937" }}>
-        {(["deposit", "withdraw"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => {
-              setTab(t);
-              setTxStatus("idle");
-              setTxMsg("");
-            }}
-            className="flex-1 py-3 text-[13px] font-semibold cursor-pointer capitalize transition-colors"
+      <div className="p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div>
+            <div
+              className="text-[11px] font-semibold uppercase tracking-wider mb-1"
+              style={{ color: "#6b7280" }}
+            >
+              Polymarket trading wallet
+            </div>
+            <div className="text-[13px]" style={{ color: "#9ca3af" }}>
+              Deposits, open positions, and trade history are tied to this deposit wallet.
+            </div>
+          </div>
+          <div className="flex gap-4 text-right">
+            <div>
+              <div className="text-[11px]" style={{ color: "#6b7280" }}>
+                Trading
+              </div>
+              <div
+                className="text-[16px] font-mono font-bold"
+                style={{ color: (tradingPusdBalance ?? 0) > 0 ? "#4ade80" : "#9ca3af" }}
+              >
+                {tradingPusdBalance !== null ? `$${tradingPusdBalance.toFixed(2)}` : "—"}
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px]" style={{ color: "#6b7280" }}>
+                Connected
+              </div>
+              <div className="text-[16px] font-mono font-bold" style={{ color: "#9ca3af" }}>
+                {connectedPusdBalance !== null ? `$${connectedPusdBalance.toFixed(2)}` : "—"}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 mb-3">
+          <code
+            className="flex-1 text-[12px] font-mono px-3 py-2.5 rounded-lg truncate"
             style={{
-              background: "none",
-              border: "none",
-              color: tab === t ? "#e5e7eb" : "#4b5563",
-              borderBottom: tab === t ? "2px solid #4ade80" : "2px solid transparent",
-              marginBottom: "-1px",
+              background: "#0d1117",
+              border: "1px solid #374151",
+              color: "#9ca3af",
             }}
           >
-            {t}
+            {fundingAddress}
+          </code>
+          <button
+            onClick={copy}
+            className="px-4 py-2.5 rounded-lg text-[13px] font-semibold cursor-pointer shrink-0 transition-all"
+            style={{
+              background: copied ? "rgba(5,150,80,0.15)" : "rgba(255,255,255,0.05)",
+              border: `1px solid ${copied ? "rgba(5,150,80,0.3)" : "#374151"}`,
+              color: copied ? "#4ade80" : "#9ca3af",
+            }}
+          >
+            {copied ? "✓ Copied" : "Copy"}
           </button>
-        ))}
-      </div>
+        </div>
 
-      <div className="p-5">
-        {tab === "deposit" ? (
-          <>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[12px]" style={{ color: "#6b7280" }}>
-                Your wallet address · Polygon
-              </span>
-              {usdcBalance !== null && (
-                <span
-                  className="text-[13px] font-mono font-bold"
-                  style={{ color: usdcBalance > 0 ? "#4ade80" : "#6b7280" }}
-                >
-                  ${usdcBalance.toFixed(2)} pUSD
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2 mt-2 mb-3">
-              <code
-                className="flex-1 text-[12px] font-mono px-3 py-2.5 rounded-lg truncate"
-                style={{
-                  background: "#0d1117",
-                  border: "1px solid #374151",
-                  color: "#9ca3af",
-                }}
-              >
-                {address}
-              </code>
-              <button
-                onClick={copy}
-                className="px-4 py-2.5 rounded-lg text-[13px] font-semibold cursor-pointer shrink-0 transition-all"
-                style={{
-                  background: copied ? "rgba(5,150,80,0.15)" : "rgba(255,255,255,0.05)",
-                  border: `1px solid ${copied ? "rgba(5,150,80,0.3)" : "#374151"}`,
-                  color: copied ? "#4ade80" : "#9ca3af",
-                }}
-              >
-                {copied ? "✓ Copied" : "Copy"}
-              </button>
-            </div>
-            <p className="text-[12px]" style={{ color: "#4b5563" }}>
-              Send <strong style={{ color: "#6b7280" }}>pUSD</strong> on{" "}
-              <strong style={{ color: "#6b7280" }}>Polygon</strong> only to this address.
-            </p>
-          </>
-        ) : (
-          <>
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-[12px]" style={{ color: "#6b7280" }}>
-                Send pUSD to another address
-              </span>
-              {usdcBalance !== null && (
-                <span className="text-[12px] font-mono" style={{ color: "#6b7280" }}>
-                  Available: <span style={{ color: "#9ca3af" }}>${usdcBalance.toFixed(2)}</span>
-                </span>
-              )}
-            </div>
-            <div className="flex flex-col gap-2">
-              <input
-                value={withdrawTo}
-                onChange={(e) => setWithdrawTo(e.target.value)}
-                placeholder="Destination address (0x…)"
-                className="w-full px-3 py-2.5 rounded-lg text-[13px] font-mono outline-none"
-                style={{
-                  background: "#0d1117",
-                  border: "1px solid #374151",
-                  color: "#e5e7eb",
-                }}
-              />
-              <div className="flex gap-2">
-                <input
-                  value={withdrawAmt}
-                  onChange={(e) => setWithdrawAmt(e.target.value)}
-                  placeholder="Amount (pUSD)"
-                  type="number"
-                  min="0"
-                  className="flex-1 px-3 py-2.5 rounded-lg text-[13px] font-mono outline-none"
-                  style={{
-                    background: "#0d1117",
-                    border: "1px solid #374151",
-                    color: "#e5e7eb",
-                  }}
-                />
-                {usdcBalance !== null && (
-                  <button
-                    onClick={() => setWithdrawAmt(usdcBalance.toFixed(2))}
-                    className="px-3 py-2 rounded-lg text-[12px] cursor-pointer shrink-0"
-                    style={{
-                      background: "rgba(255,255,255,0.05)",
-                      border: "1px solid #374151",
-                      color: "#6b7280",
-                    }}
-                  >
-                    Max
-                  </button>
-                )}
-              </div>
-              {txMsg && (
-                <div
-                  className="text-[12px] px-3 py-2 rounded-lg"
-                  style={{
-                    background:
-                      txStatus === "success" ? "rgba(5,150,80,0.1)" : "rgba(220,38,38,0.1)",
-                    color: txStatus === "success" ? "#4ade80" : "#f87171",
-                  }}
-                >
-                  {txMsg}
-                </div>
-              )}
-              <button
-                onClick={handleWithdraw}
-                disabled={txStatus === "loading" || !withdrawTo || !withdrawAmt}
-                className="w-full py-2.5 rounded-lg text-[14px] font-semibold cursor-pointer transition-all disabled:opacity-40"
-                style={{
-                  background: "rgba(220,38,38,0.15)",
-                  border: "1px solid rgba(220,38,38,0.3)",
-                  color: "#f87171",
-                }}
-              >
-                {txStatus === "loading" ? "Sending…" : "Withdraw"}
-              </button>
-            </div>
-          </>
+        {!depositWallet?.deployed && (
+          <button
+            onClick={handleDeploy}
+            disabled={deployStatus === "loading"}
+            className="w-full py-2.5 rounded-lg text-[13px] font-semibold cursor-pointer disabled:opacity-50 mb-3"
+            style={{
+              background: "rgba(59,130,246,0.12)",
+              border: "1px solid rgba(59,130,246,0.3)",
+              color: "#60a5fa",
+            }}
+          >
+            {deployStatus === "loading" ? "Deploying trading wallet…" : "Deploy trading wallet"}
+          </button>
         )}
+
+        <div
+          className="rounded-lg p-3"
+          style={{ background: "#0d1117", border: "1px solid #374151" }}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[12px] font-semibold" style={{ color: "#9ca3af" }}>
+              Move pUSD from connected wallet
+            </span>
+            {connectedPusdBalance !== null && connectedPusdBalance > 0 && (
+              <button
+                onClick={() => setMoveAmount(connectedPusdBalance.toFixed(2))}
+                className="text-[12px] font-mono cursor-pointer bg-transparent border-none p-0"
+                style={{ color: "#60a5fa" }}
+              >
+                Max ${connectedPusdBalance.toFixed(2)}
+              </button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <input
+              value={moveAmount}
+              onChange={(e) => setMoveAmount(e.target.value)}
+              placeholder="Amount"
+              type="number"
+              min="0"
+              className="flex-1 min-w-0 px-3 py-2.5 rounded-lg text-[13px] font-mono outline-none"
+              style={{
+                background: "#161b22",
+                border: `1px solid ${insufficientConnectedPusd ? "rgba(220,38,38,0.4)" : "#374151"}`,
+                color: "#e5e7eb",
+              }}
+            />
+            <button
+              onClick={handleMove}
+              disabled={
+                txStatus === "loading" ||
+                !moveNum ||
+                insufficientConnectedPusd ||
+                depositWallet?.deployed !== true
+              }
+              className="px-4 py-2.5 rounded-lg text-[13px] font-semibold cursor-pointer transition-all disabled:opacity-40"
+              style={{
+                background: "rgba(5,150,80,0.12)",
+                border: "1px solid rgba(5,150,80,0.3)",
+                color: "#4ade80",
+              }}
+            >
+              {txStatus === "loading" ? "Moving…" : "Move"}
+            </button>
+          </div>
+          <p className="text-[12px] mt-2" style={{ color: "#4b5563" }}>
+            pUSD on the connected wallet is visible here, but CLOB orders only use the trading
+            wallet balance.
+          </p>
+          {txMsg && (
+            <div
+              className="text-[12px] px-3 py-2 rounded-lg mt-2"
+              style={{
+                background: txStatus === "success" ? "rgba(5,150,80,0.1)" : "rgba(220,38,38,0.1)",
+                color: txStatus === "success" ? "#4ade80" : "#f87171",
+              }}
+            >
+              {txMsg}
+            </div>
+          )}
+        </div>
+        <p className="text-[12px] mt-3" style={{ color: "#4b5563" }}>
+          Send pUSD on Polygon only to the trading wallet address above.
+        </p>
       </div>
     </div>
   );
@@ -618,6 +634,8 @@ export default function Portfolio() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(false);
   const [usdcBalance, setUsdcBalance] = useState<number | null>(null);
+  const [tradingUsdcBalance, setTradingUsdcBalance] = useState<number | null>(null);
+  const [depositWallet, setDepositWallet] = useState<DepositWalletInfo | null>(null);
   const [tab, setTab] = useState<Tab>("positions");
 
   const wallet = useMemo(
@@ -625,18 +643,56 @@ export default function Portfolio() {
     [wallets, walletsReady],
   );
   const address = wallet?.address;
+  const portfolioAddress = depositWallet?.address ?? address;
+
+  const refreshBalances = useCallback(async () => {
+    if (!address) {
+      setUsdcBalance(null);
+      setTradingUsdcBalance(null);
+      return;
+    }
+    const [connected, trading] = await Promise.all([
+      getUsdcBalance(address),
+      depositWallet?.address ? getUsdcBalance(depositWallet.address) : Promise.resolve(null),
+    ]);
+    setUsdcBalance(connected);
+    setTradingUsdcBalance(trading);
+  }, [address, depositWallet?.address]);
+
+  const handleDeployDepositWallet = useCallback(async () => {
+    if (!address) return;
+    const next = await requestDepositWalletDeploy(address);
+    setDepositWallet(next);
+  }, [address]);
 
   useEffect(() => {
     if (!address) return;
+    let cancelled = false;
+    fetchDepositWalletInfo(address)
+      .then((data) => {
+        if (!cancelled) setDepositWallet(data);
+      })
+      .catch(() => {
+        if (!cancelled) setDepositWallet(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [address]);
+
+  useEffect(() => {
+    if (!portfolioAddress) return;
     setLoading(true);
-    fetch(`https://data-api.polymarket.com/positions?user=${address.toLowerCase()}`)
+    fetch(`https://data-api.polymarket.com/positions?user=${portfolioAddress.toLowerCase()}`)
       .then((r) => r.json())
       .then((data: Position[]) => setPositions(Array.isArray(data) ? data : []))
       .catch(() => setPositions([]))
       .finally(() => setLoading(false));
+  }, [portfolioAddress]);
 
-    getUsdcBalance(address).then(setUsdcBalance);
-  }, [address]);
+  useEffect(() => {
+    refreshBalances();
+  }, [refreshBalances]);
 
   return (
     <div className="min-h-screen" style={{ background: "var(--bg)" }}>
@@ -717,9 +773,12 @@ export default function Portfolio() {
           <>
             <FundsPanel
               address={address ?? ""}
+              depositWallet={depositWallet}
               wallet={wallet}
-              usdcBalance={usdcBalance}
-              onBalanceRefresh={() => address && getUsdcBalance(address).then(setUsdcBalance)}
+              connectedPusdBalance={usdcBalance}
+              tradingPusdBalance={tradingUsdcBalance}
+              onDeployWallet={handleDeployDepositWallet}
+              onBalanceRefresh={refreshBalances}
             />
             <SummaryBar positions={positions} />
 
@@ -766,7 +825,7 @@ export default function Portfolio() {
                   <PositionsTable positions={positions} />
                 )
               ) : (
-                address && <ActivityTable address={address.toLowerCase()} />
+                portfolioAddress && <ActivityTable address={portfolioAddress.toLowerCase()} />
               )}
             </div>
           </>
