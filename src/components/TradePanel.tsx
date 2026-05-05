@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import type { ConnectedWallet } from "@privy-io/react-auth";
 import { usePrivy, useSendTransaction, useWallets } from "@privy-io/react-auth";
 import posthog from "posthog-js";
 import { Bond, fmtVolume } from "@/lib/bonds";
@@ -11,14 +12,22 @@ import {
 } from "@/lib/privyWallet";
 import {
   CLOB_URL,
+  COLLATERAL_ONRAMP_ADDRESS,
+  CONDITIONAL_TOKENS_ADDRESS,
   CTF_EXCHANGE,
   NEG_RISK_CTF_EXCHANGE,
+  approveCtfSponsored,
   calcMarketPreview,
   calcSellPreview,
   signAndPlaceOrder,
   getUsdcBalance,
   getUsdcAllowance,
+  getUsdceBalance,
+  getUsdceAllowance,
+  getCtfApproval,
   approveUsdcSponsored,
+  approveUsdceOnrampSponsored,
+  wrapUsdceSponsored,
   OrderBook,
   OrderPreview,
   OrderType,
@@ -134,14 +143,62 @@ function OrderBookDisplay({ book }: { book: OrderBook }) {
 
 // ── Deposit Panel ────────────────────────────────────────────────────────────
 
-function DepositPanel({ address, usdcBalance }: { address: string; usdcBalance: number | null }) {
+function DepositPanel({
+  address,
+  wallet,
+  usdcBalance,
+  usdceBalance,
+  usdceAllowance,
+  onBalanceRefresh,
+}: {
+  address: string;
+  wallet: ConnectedWallet;
+  usdcBalance: number | null;
+  usdceBalance: number | null;
+  usdceAllowance: number | null;
+  onBalanceRefresh: () => void;
+}) {
   const [copied, setCopied] = useState(false);
+  const [wrapAmount, setWrapAmount] = useState("");
+  const [wrapStatus, setWrapStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [wrapMsg, setWrapMsg] = useState("");
+  const { sendTransaction } = useSendTransaction();
+  const wrapNum = parseFloat(wrapAmount || "0");
+  const needsOnrampApproval = usdceAllowance !== null && wrapNum > 0 && wrapNum > usdceAllowance;
+  const insufficientUsdce = usdceBalance !== null && wrapNum > 0 && wrapNum > usdceBalance;
+
   const copy = () => {
     navigator.clipboard.writeText(address).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
   };
+
+  const handleWrap = async () => {
+    if (isNaN(wrapNum) || wrapNum <= 0 || insufficientUsdce) return;
+    setWrapStatus("loading");
+    setWrapMsg("");
+    try {
+      await ensureWalletOnPolygon(wallet);
+      const rawAmount = BigInt(Math.round(wrapNum * 1_000_000));
+      const result = needsOnrampApproval
+        ? await approveUsdceOnrampSponsored(sendTransaction, address)
+        : await wrapUsdceSponsored({ sendTransaction, address, amount: rawAmount });
+      if (!result.success) throw new Error(result.error ?? "Transaction failed");
+      setWrapStatus("success");
+      setWrapMsg(
+        needsOnrampApproval
+          ? "USDC.e approved. Wrap it next."
+          : `Wrapped $${wrapNum.toFixed(2)} into pUSD`,
+      );
+      if (!needsOnrampApproval) setWrapAmount("");
+      setTimeout(onBalanceRefresh, 3000);
+    } catch (e: any) {
+      setWrapStatus("error");
+      setWrapMsg(e?.message ?? "Transaction failed");
+    }
+  };
+
   return (
     <div
       className="rounded-xl p-4 mb-4"
@@ -152,21 +209,21 @@ function DepositPanel({ address, usdcBalance }: { address: string; usdcBalance: 
           className="text-[12px] font-semibold uppercase tracking-wider"
           style={{ color: "#6b7280" }}
         >
-          Deposit USDC to Polygon
+          Fund pUSD
         </span>
         {usdcBalance !== null && (
           <span
             className="text-[12px] font-mono font-semibold"
             style={{ color: usdcBalance > 0 ? "#4ade80" : "#6b7280" }}
           >
-            ${usdcBalance.toFixed(2)} USDC
+            ${usdcBalance.toFixed(2)} pUSD
           </span>
         )}
       </div>
 
       <p className="text-[12px] mb-3" style={{ color: "#9ca3af" }}>
-        Send <strong style={{ color: "#e5e7eb" }}>USDC</strong> on{" "}
-        <strong style={{ color: "#e5e7eb" }}>Polygon</strong> to your wallet address below.
+        Already have <strong style={{ color: "#e5e7eb" }}>pUSD</strong>? Send it on{" "}
+        <strong style={{ color: "#e5e7eb" }}>Polygon</strong> to this wallet.
       </p>
 
       <div className="flex gap-2 mb-3">
@@ -193,10 +250,56 @@ function DepositPanel({ address, usdcBalance }: { address: string; usdcBalance: 
         </button>
       </div>
 
-      <p className="text-[11px] mt-1" style={{ color: "#6b7280" }}>
-        Send USDC on <strong style={{ color: "#9ca3af" }}>Polygon</strong> only. Find your address
-        in the account menu ↗
-      </p>
+      <div
+        className="rounded-lg p-3 mt-3"
+        style={{ background: "#0d1117", border: "1px solid #374151" }}
+      >
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[11px] font-semibold uppercase" style={{ color: "#6b7280" }}>
+            Wrap USDC.e
+          </span>
+          {usdceBalance !== null && (
+            <span className="text-[11px] font-mono" style={{ color: "#9ca3af" }}>
+              ${usdceBalance.toFixed(2)} available
+            </span>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <input
+            value={wrapAmount}
+            onChange={(e) => setWrapAmount(e.target.value)}
+            type="number"
+            min="0"
+            placeholder="Amount"
+            className="min-w-0 flex-1 px-2 py-1.5 rounded-md text-[12px] font-mono outline-none"
+            style={{
+              background: "#161b22",
+              border: `1px solid ${insufficientUsdce ? "rgba(220,38,38,0.4)" : "#374151"}`,
+              color: "#e5e7eb",
+            }}
+          />
+          <button
+            onClick={handleWrap}
+            disabled={wrapStatus === "loading" || !wrapNum || insufficientUsdce}
+            className="px-3 py-1.5 rounded-md text-[12px] font-semibold cursor-pointer disabled:opacity-50 shrink-0"
+            style={{
+              background: "rgba(59,130,246,0.12)",
+              border: "1px solid rgba(59,130,246,0.3)",
+              color: "#60a5fa",
+            }}
+          >
+            {wrapStatus === "loading" ? "Working..." : needsOnrampApproval ? "Approve" : "Wrap"}
+          </button>
+        </div>
+        {wrapMsg && (
+          <div
+            className="text-[11px] mt-2"
+            style={{ color: wrapStatus === "error" ? "#f87171" : "#4ade80" }}
+          >
+            {wrapMsg}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -218,7 +321,10 @@ export default function TradePanel({ bond, onClose }: Props) {
   const [book, setBook] = useState<OrderBook | null>(null);
   const [preview, setPreview] = useState<OrderPreview | null>(null);
   const [usdcBalance, setUsdcBalance] = useState<number | null>(null);
-  const [allowance, setAllowance] = useState<number | null>(null);
+  const [usdceBalance, setUsdceBalance] = useState<number | null>(null);
+  const [usdceAllowance, setUsdceAllowance] = useState<number | null>(null);
+  const [collateralAllowance, setCollateralAllowance] = useState<number | null>(null);
+  const [ctfApproval, setCtfApproval] = useState<boolean | null>(null);
   const [chainId, setChainId] = useState<number | null>(null);
   const [creds, setCreds] = useState<ApiCredentials | null>(null);
   const [status, setStatus] = useState<Status>("idle");
@@ -283,6 +389,30 @@ export default function TradePanel({ bond, onClose }: Props) {
     [user?.id],
   );
 
+  const refreshBalances = useCallback(async () => {
+    if (!wallet?.address) {
+      setUsdcBalance(null);
+      setUsdceBalance(null);
+      setUsdceAllowance(null);
+      setCollateralAllowance(null);
+      setCtfApproval(null);
+      return;
+    }
+    const [balance, usdce, nextUsdceAllowance, nextCollateralAllowance, nextCtfApproval] =
+      await Promise.all([
+        getUsdcBalance(wallet.address),
+        getUsdceBalance(wallet.address),
+        getUsdceAllowance(wallet.address, COLLATERAL_ONRAMP_ADDRESS),
+        getUsdcAllowance(wallet.address, CONDITIONAL_TOKENS_ADDRESS),
+        getCtfApproval(wallet.address, exchange),
+      ]);
+    setUsdcBalance(balance);
+    setUsdceBalance(usdce);
+    setUsdceAllowance(nextUsdceAllowance);
+    setCollateralAllowance(nextCollateralAllowance);
+    setCtfApproval(nextCtfApproval);
+  }, [wallet?.address, exchange]);
+
   useEffect(() => {
     posthog?.capture(
       "trade_panel_opened",
@@ -309,11 +439,25 @@ export default function TradePanel({ bond, onClose }: Props) {
     );
     if (!tokenId) return;
     setBook(null);
-    const load = () =>
-      fetch(`${CLOB_URL}/book?token_id=${tokenId}`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d) => d && setBook(d))
-        .catch(() => {});
+    const load = async () => {
+      try {
+        const [bookRes, feeRes] = await Promise.all([
+          fetch(`${CLOB_URL}/book?token_id=${tokenId}`),
+          fetch(`${CLOB_URL}/fee-rate?token_id=${tokenId}`),
+        ]);
+        if (!bookRes.ok) return;
+        const nextBook = await bookRes.json();
+        const fee = feeRes.ok ? await feeRes.json() : null;
+        const baseFee =
+          typeof fee?.base_fee === "number"
+            ? fee.base_fee
+            : Number.parseFloat(String(fee?.base_fee ?? "0"));
+        setBook({
+          ...nextBook,
+          base_fee: Number.isFinite(baseFee) ? baseFee : 0,
+        });
+      } catch {}
+    };
     load();
     const id = setInterval(load, 2000);
     return () => clearInterval(id);
@@ -324,7 +468,10 @@ export default function TradePanel({ bond, onClose }: Props) {
     if (!wallet?.address) {
       setChainId(null);
       setUsdcBalance(null);
-      setAllowance(null);
+      setUsdceBalance(null);
+      setUsdceAllowance(null);
+      setCollateralAllowance(null);
+      setCtfApproval(null);
       return;
     }
     let cleanup: (() => void) | undefined;
@@ -340,11 +487,10 @@ export default function TradePanel({ bond, onClose }: Props) {
         };
       } catch {}
 
-      getUsdcBalance(wallet.address).then(setUsdcBalance);
-      getUsdcAllowance(wallet.address, exchange).then(setAllowance);
+      refreshBalances();
     })();
     return () => cleanup?.();
-  }, [wallet?.address, exchange]);
+  }, [wallet?.address, refreshBalances]);
 
   // Preview calculation
   useEffect(() => {
@@ -411,12 +557,7 @@ export default function TradePanel({ bond, onClose }: Props) {
     try {
       await ensureWalletOnPolygon(wallet);
       setChainId(POLYGON_CHAIN_ID);
-      const [balance, nextAllowance] = await Promise.all([
-        getUsdcBalance(wallet.address),
-        getUsdcAllowance(wallet.address, exchange),
-      ]);
-      setUsdcBalance(balance);
-      setAllowance(nextAllowance);
+      await refreshBalances();
     } catch (e: any) {
       posthog?.capture(
         "network_switch_failed",
@@ -435,7 +576,7 @@ export default function TradePanel({ bond, onClose }: Props) {
       return;
     }
     setStatus("idle");
-  }, [wallet, exchange, posthog, metricProps, captureServer]);
+  }, [wallet, refreshBalances, posthog, metricProps, captureServer]);
 
   // Get CLOB API credentials (L1 auth → API key)
   const ensureCreds = useCallback(
@@ -457,25 +598,27 @@ export default function TradePanel({ bond, onClose }: Props) {
     [creds, wallet],
   );
 
-  // Approve USDC
+  // Approve collateral
   const handleApprove = useCallback(async () => {
     if (!wallet) return;
     posthog?.capture("usdc_approval_started", metricProps());
     captureServer("usdc_approval_started", metricProps());
     setStatus("approving");
-    setStatusMsg("Approving USDC…");
+    setStatusMsg(tradeDir === "BUY" ? "Approving pUSD…" : "Approving outcome tokens…");
     try {
       await ensureWalletOnPolygon(wallet);
       setChainId(POLYGON_CHAIN_ID);
-      const result = await approveUsdcSponsored(sendTransaction, wallet.address, exchange);
+      const result =
+        tradeDir === "BUY"
+          ? await approveUsdcSponsored(sendTransaction, wallet.address, CONDITIONAL_TOKENS_ADDRESS)
+          : await approveCtfSponsored(sendTransaction, wallet.address, exchange);
       if (result.success) {
         posthog?.capture("usdc_approval_succeeded", metricProps());
         captureServer("usdc_approval_succeeded", metricProps());
         setStatusMsg("Approved! Refreshing…");
         // Wait a couple seconds for the tx to propagate then recheck
         setTimeout(() => {
-          getUsdcAllowance(wallet.address, exchange).then((a) => {
-            setAllowance(a);
+          refreshBalances().then(() => {
             setStatus("idle");
             setStatusMsg("");
           });
@@ -512,7 +655,16 @@ export default function TradePanel({ bond, onClose }: Props) {
       setStatus("error");
       setStatusMsg(e?.message ?? "Approval failed");
     }
-  }, [wallet, exchange, sendTransaction, posthog, metricProps, captureServer]);
+  }, [
+    wallet,
+    tradeDir,
+    exchange,
+    sendTransaction,
+    refreshBalances,
+    posthog,
+    metricProps,
+    captureServer,
+  ]);
 
   // Place order
   const handleTrade = useCallback(async () => {
@@ -540,7 +692,8 @@ export default function TradePanel({ bond, onClose }: Props) {
       const activeCreds = await ensureCreds(wc);
       if (!activeCreds) return;
 
-      const price = orderType === "FOK" ? preview.avgPrice : parseFloat(limitPrice);
+      const price =
+        orderType === "FOK" ? (preview.limitPrice ?? preview.avgPrice) : parseFloat(limitPrice);
       const result = await signAndPlaceOrder({
         walletClient: wc,
         address: wallet.address,
@@ -564,8 +717,7 @@ export default function TradePanel({ bond, onClose }: Props) {
         setStatus("success");
         setStatusMsg("Order placed!");
         setAmount("");
-        getUsdcBalance(wallet.address).then(setUsdcBalance);
-        getUsdcAllowance(wallet.address, exchange).then(setAllowance);
+        refreshBalances();
       } else {
         // If auth error, clear stored creds so next attempt re-authenticates
         if (
@@ -612,6 +764,7 @@ export default function TradePanel({ bond, onClose }: Props) {
     exchange,
     ensureCreds,
     creds,
+    refreshBalances,
     posthog,
     metricProps,
     captureServer,
@@ -619,8 +772,12 @@ export default function TradePanel({ bond, onClose }: Props) {
   ]);
 
   const usdcNum = parseFloat(amount || "0");
-  const needsApproval = tradeDir === "BUY" && allowance !== null && usdcNum > allowance;
+  const needsApproval =
+    tradeDir === "BUY"
+      ? collateralAllowance !== null && usdcNum > collateralAllowance
+      : ctfApproval !== true;
   const insufficientFunds = tradeDir === "BUY" && usdcBalance !== null && usdcNum > usdcBalance;
+  const approvalLabel = tradeDir === "BUY" ? "Approve pUSD" : "Approve outcome tokens";
   const isLoading =
     status === "loading" ||
     status === "approving" ||
@@ -713,7 +870,14 @@ export default function TradePanel({ bond, onClose }: Props) {
 
           {/* Deposit Panel */}
           {showDeposit && wallet?.address && (
-            <DepositPanel address={wallet.address} usdcBalance={usdcBalance} />
+            <DepositPanel
+              address={wallet.address}
+              wallet={wallet}
+              usdcBalance={usdcBalance}
+              usdceBalance={usdceBalance}
+              usdceAllowance={usdceAllowance}
+              onBalanceRefresh={refreshBalances}
+            />
           )}
 
           {/* Balance + Network indicator */}
@@ -856,7 +1020,7 @@ export default function TradePanel({ bond, onClose }: Props) {
                 min="0"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                placeholder={tradeDir === "BUY" ? "USDC to spend" : "Shares to sell"}
+                placeholder={tradeDir === "BUY" ? "pUSD to spend" : "Shares to sell"}
                 className="w-full pl-6 pr-3 py-2 rounded-lg text-[13px] font-mono outline-none"
                 style={{
                   background: "#161b22",
@@ -901,9 +1065,15 @@ export default function TradePanel({ bond, onClose }: Props) {
                 </span>
                 <span style={{ color: "#e5e7eb" }}>{preview.shares.toFixed(2)}</span>
               </div>
+              {preview.fee != null && preview.fee > 0 && (
+                <div className="flex justify-between mb-1">
+                  <span style={{ color: "#6b7280" }}>Est. taker fee</span>
+                  <span style={{ color: "#e5e7eb" }}>${preview.fee.toFixed(4)}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span style={{ color: "#6b7280" }}>
-                  {tradeDir === "BUY" ? "Max profit" : "USDC received"}
+                  {tradeDir === "BUY" ? "Max profit" : "pUSD received"}
                 </span>
                 <span style={{ color: tradeDir === "BUY" ? "#4ade80" : "#60a5fa" }}>
                   {tradeDir === "BUY"
@@ -969,7 +1139,7 @@ export default function TradePanel({ bond, onClose }: Props) {
                 border: "1px solid rgba(234,179,8,0.25)",
               }}
             >
-              {status === "approving" ? "Approving…" : "Approve USDC"}
+              {status === "approving" ? "Approving…" : approvalLabel}
             </button>
           ) : insufficientFunds ? (
             <button
@@ -981,7 +1151,7 @@ export default function TradePanel({ bond, onClose }: Props) {
                 border: "1px solid rgba(220,38,38,0.25)",
               }}
             >
-              Insufficient balance — Deposit USDC
+              Insufficient balance — Deposit pUSD
             </button>
           ) : (
             <button

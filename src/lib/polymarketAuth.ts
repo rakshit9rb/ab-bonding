@@ -1,8 +1,6 @@
 // Polymarket CLOB L1 authentication bootstrap.
 // L2 API secrets stay server-side; the browser only asks the wallet to sign L1 auth.
 
-const CLOB_URL = "https://clob.polymarket.com";
-
 export interface ApiCredentials {
   address: string;
 }
@@ -16,12 +14,13 @@ export function clearCreds(address: string) {
 }
 
 // L1: sign EIP-712 ClobAuth message to create API key
-async function createApiKey(walletClient: any, address: string): Promise<ApiCredentials | null> {
+async function createApiKey(
+  walletClient: any,
+  address: string,
+): Promise<ApiCredentials | null> {
   try {
-    const nonceRes = await fetch(`${CLOB_URL}/auth/nonce`);
-    if (!nonceRes.ok) return null;
-    const { nonce } = await nonceRes.json();
     const timestamp = Math.floor(Date.now() / 1000).toString();
+    const nonce = "0";
 
     const signature = await walletClient.signTypedData({
       account: address as `0x${string}`,
@@ -48,13 +47,14 @@ async function createApiKey(walletClient: any, address: string): Promise<ApiCred
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ address, signature, timestamp, nonce: nonce.toString() }),
+      body: JSON.stringify({
+        address,
+        signature,
+        timestamp,
+        nonce: nonce.toString(),
+      }),
     });
-    if (!res.ok) {
-      const err = await res.text();
-      console.error("createApiKey failed", res.status, err);
-      return null;
-    }
+    if (!res.ok) return null;
     return { address };
   } catch (e) {
     console.error("createApiKey error", e);

@@ -22,7 +22,8 @@ function decodeSecret(secret: string): Buffer {
 }
 
 function normalizeAddress(address: unknown): string | null {
-  if (typeof address !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(address)) return null;
+  if (typeof address !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(address))
+    return null;
   return address.toLowerCase();
 }
 
@@ -57,16 +58,24 @@ export async function createClobCreds({
     return null;
   }
 
-  const res = await fetch(`${CLOB_URL}/auth/api-key`, {
+  const headers = {
+    "Content-Type": "application/json",
+    POLY_ADDRESS: normalized,
+    POLY_SIGNATURE: signature,
+    POLY_TIMESTAMP: timestamp,
+    POLY_NONCE: nonce,
+  };
+
+  let res = await fetch(`${CLOB_URL}/auth/api-key`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      POLY_ADDRESS: normalized,
-      POLY_SIGNATURE: signature,
-      POLY_TIMESTAMP: timestamp,
-      POLY_NONCE: nonce,
-    },
+    headers,
   });
+  if (!res.ok) {
+    res = await fetch(`${CLOB_URL}/auth/derive-api-key`, {
+      method: "GET",
+      headers,
+    });
+  }
   if (!res.ok) return null;
 
   const data = await res.json();
