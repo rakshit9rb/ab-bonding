@@ -22,8 +22,7 @@ function decodeSecret(secret: string): Buffer {
 }
 
 function normalizeAddress(address: unknown): string | null {
-  if (typeof address !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(address))
-    return null;
+  if (typeof address !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(address)) return null;
   return address.toLowerCase();
 }
 

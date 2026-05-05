@@ -14,10 +14,7 @@ export function clearCreds(address: string) {
 }
 
 // L1: sign EIP-712 ClobAuth message to create API key
-async function createApiKey(
-  walletClient: any,
-  address: string,
-): Promise<ApiCredentials | null> {
+async function createApiKey(walletClient: any, address: string): Promise<ApiCredentials | null> {
   try {
     const timestamp = Math.floor(Date.now() / 1000).toString();
     const nonce = "0";
