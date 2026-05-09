@@ -51,7 +51,7 @@ function FilterLink({
         padding: 0,
         color: active ? "var(--text)" : "var(--text-tertiary)",
         fontWeight: active ? 600 : 400,
-        textDecoration: active ? "underline" : "none",
+        textDecorationLine: active ? "underline" : "none",
         textUnderlineOffset: "4px",
         textDecorationThickness: "2px",
       }}
@@ -370,14 +370,12 @@ function AuthButton() {
 
 export default function Dashboard({ initialBonds }: DashboardProps) {
   const [allBonds, setAllBonds] = useState<Bond[]>(initialBonds ?? []);
-  const [fetchedAt, setFetchedAt] = useState(() =>
-    initialBonds?.length
-      ? new Date().toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        })
-      : "",
-  );
+  const [fetchedAt, setFetchedAt] = useState("");
+  useEffect(() => {
+    if (initialBonds?.length) {
+      setFetchedAt(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+    }
+  }, [initialBonds]);
   const [loading, setLoading] = useState(!initialBonds?.length);
   const [error, setError] = useState<string | null>(null);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
@@ -658,7 +656,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
                 padding: 0,
                 color: showDisputes ? "var(--text)" : "var(--text-tertiary)",
                 fontWeight: showDisputes ? 600 : 400,
-                textDecoration: showDisputes ? "underline" : "none",
+                textDecorationLine: showDisputes ? "underline" : "none",
                 textUnderlineOffset: "4px",
                 textDecorationThickness: "2px",
               }}
