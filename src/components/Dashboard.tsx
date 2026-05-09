@@ -370,14 +370,12 @@ function AuthButton() {
 
 export default function Dashboard({ initialBonds }: DashboardProps) {
   const [allBonds, setAllBonds] = useState<Bond[]>(initialBonds ?? []);
-  const [fetchedAt, setFetchedAt] = useState(() =>
-    initialBonds?.length
-      ? new Date().toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        })
-      : "",
-  );
+  const [fetchedAt, setFetchedAt] = useState("");
+  useEffect(() => {
+    if (initialBonds?.length) {
+      setFetchedAt(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+    }
+  }, [initialBonds]);
   const [loading, setLoading] = useState(!initialBonds?.length);
   const [error, setError] = useState<string | null>(null);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
