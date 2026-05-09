@@ -451,19 +451,54 @@ export async function signAndPlaceOrder({
       orderType === "FOK" ? ClobOrderType.FOK : ClobOrderType.GTC,
     );
     const bodyStr = JSON.stringify(bodyObj);
-    const res = await fetch("/api/clob/order", {
+    const signRes = await fetch("/api/clob/order", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: bodyStr,
     });
-
-    const data = await res.json();
-    if (!res.ok)
+    if (!signRes.ok) {
+      const err = await signRes.json().catch(() => ({}));
       return {
         success: false,
-        error: data.error ?? data.message ?? "Order failed",
+        error: err.error ?? err.message ?? "Order signing failed",
+      };
+    }
+    const signed = (await signRes.json()) as {
+      url: string;
+      method: string;
+      headers: Record<string, string>;
+      body: string;
+    };
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    let polyRes: Response;
+    try {
+      polyRes = await fetch(signed.url, {
+        method: signed.method,
+        headers: signed.headers,
+        body: signed.body,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    const text = await polyRes.text();
+    let data: any = {};
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = {};
+      }
+    }
+    if (!polyRes.ok)
+      return {
+        success: false,
+        error: data.error ?? data.message ?? text ?? "Order failed",
       };
     if (data.success === false)
       return {

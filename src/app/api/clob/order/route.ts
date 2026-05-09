@@ -52,24 +52,15 @@ export async function POST(request: Request) {
       postOnly: body.postOnly === true,
     };
     const bodyStr = JSON.stringify(upstreamBody);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-    const res = await fetch(`${CLOB_URL}${ORDER_PATH}`, {
+    return NextResponse.json({
+      url: `${CLOB_URL}${ORDER_PATH}`,
       method: "POST",
-      signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
         ...buildL2Headers(creds, "POST", ORDER_PATH, bodyStr),
         ...buildBuilderHeaders("POST", ORDER_PATH, bodyStr),
       },
       body: bodyStr,
-    }).finally(() => clearTimeout(timeout));
-    const text = await res.text();
-    return new NextResponse(text, {
-      status: res.status,
-      headers: {
-        "Content-Type": res.headers.get("Content-Type") ?? "application/json",
-      },
     });
   } catch (error) {
     console.error("[clob/order] order failed", error);
