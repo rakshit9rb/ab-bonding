@@ -7,9 +7,9 @@ if (key) {
     posthog.init(key, {
       api_host:
         typeof window === "undefined"
-          ? process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com"
+          ? process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://eu.i.posthog.com"
           : new URL("/ingest", window.location.origin).toString(),
-      ui_host: process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://app.posthog.com",
+      ui_host: process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://eu.posthog.com",
       autocapture: false,
       capture_pageview: "history_change",
       capture_pageleave: true,

@@ -4,8 +4,7 @@ import { Bond, calcAPY } from "@/lib/bonds";
 export const revalidate = 60;
 
 const GAMMA = "https://gamma-api.polymarket.com";
-const PAGES = 5;
-const LIMIT = 200;
+const LIMIT = 500;
 
 function parsePrice(m: Record<string, unknown>): number | null {
   try {
@@ -25,80 +24,62 @@ function parsePrice(m: Record<string, unknown>): number | null {
 
 export async function GET() {
   try {
-    const pageUrls: string[] = [];
-    for (let page = 0; page < PAGES; page++) {
-      pageUrls.push(
-        `${GAMMA}/markets?closed=false&active=true&limit=${LIMIT}&offset=${page * LIMIT}&order=volume24hr&ascending=false`,
-      );
-    }
+    const url = `${GAMMA}/markets?closed=false&uma_resolution_status=disputed&limit=${LIMIT}`;
 
-    const results = await Promise.allSettled(
-      pageUrls.map((url) =>
-        fetch(url, {
-          headers: { "User-Agent": "OnlyBonds/1.0" },
-          next: { revalidate: 60 },
-        }).then((res) => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          return res.json();
-        }),
-      ),
-    );
+    const res = await fetch(url, {
+      headers: { "User-Agent": "OnlyBonds/1.0" },
+      next: { revalidate: 60 },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const markets: Record<string, unknown>[] = Array.isArray(data) ? data : (data.markets ?? []);
 
     const seen = new Set<string>();
     const bonds: Bond[] = [];
     const now = new Date();
 
-    for (const result of results) {
-      if (result.status !== "fulfilled") continue;
-      const data = result.value;
-      const page: Record<string, unknown>[] = Array.isArray(data) ? data : (data.markets ?? []);
+    for (const m of markets) {
+      const id = String(m.conditionId || m.id || "");
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
 
-      for (const m of page) {
-        const id = String(m.conditionId || m.id || "");
-        if (!id || seen.has(id)) continue;
-        seen.add(id);
+      if (m.closed === true || m.resolved === true || m.active === false) continue;
 
-        if (m.closed === true || m.resolved === true || m.active === false) continue;
-        if (m.umaResolutionStatus !== "disputed") continue;
+      const price = parsePrice(m);
+      const endDate = String(m.endDate || m.endDateIso || "");
+      if (endDate && !endDate.startsWith("2026-12-31") && new Date(endDate) <= now) continue;
 
-        const price = parsePrice(m);
-        const endDate = String(m.endDate || m.endDateIso || "");
-        if (endDate && !endDate.startsWith("2026-12-31") && new Date(endDate) <= now) continue;
+      const slug = String(
+        (Array.isArray(m.events) && (m.events as any[]).length > 0
+          ? (m.events as any[])[0]?.slug
+          : null) ||
+          m.slug ||
+          m.conditionId ||
+          "",
+      );
 
-        const slug = String(
-          (Array.isArray(m.events) && (m.events as any[]).length > 0
-            ? (m.events as any[])[0]?.slug
-            : null) ||
-            m.slug ||
-            m.conditionId ||
-            "",
-        );
+      let clobTokenIds: [string, string] | null = null;
+      try {
+        const raw = m.clobTokenIds;
+        const ids: string[] = typeof raw === "string" ? JSON.parse(raw) : ((raw as string[]) ?? []);
+        if (ids[0] && ids[1]) clobTokenIds = [ids[0], ids[1]];
+      } catch {}
 
-        let clobTokenIds: [string, string] | null = null;
-        try {
-          const raw = m.clobTokenIds;
-          const ids: string[] =
-            typeof raw === "string" ? JSON.parse(raw) : ((raw as string[]) ?? []);
-          if (ids[0] && ids[1]) clobTokenIds = [ids[0], ids[1]];
-        } catch {}
-
-        bonds.push({
-          id,
-          conditionId: id,
-          question: String(m.question || m.title || "Unknown"),
-          slug,
-          category: "Disputed",
-          outcome: "YES",
-          price: price ?? 0,
-          apy:
-            price && endDate && !endDate.startsWith("2026-12-31") ? calcAPY(price, endDate) : null,
-          endDate,
-          volume: parseFloat(String(m.volume24hr || m.volumeNum || m.volumeClob || m.volume || 0)),
-          liquidity: parseFloat(String(m.liquidityNum || m.liquidityClob || m.liquidity || 0)),
-          clobTokenIds,
-          negRisk: Boolean(m.negRisk),
-        });
-      }
+      bonds.push({
+        id,
+        conditionId: id,
+        question: String(m.question || m.title || "Unknown"),
+        slug,
+        category: "Disputed",
+        outcome: "YES",
+        price: price ?? 0,
+        apy: price && endDate && !endDate.startsWith("2026-12-31") ? calcAPY(price, endDate) : null,
+        endDate,
+        volume: parseFloat(String(m.volume24hr || m.volumeNum || m.volumeClob || m.volume || 0)),
+        liquidity: parseFloat(String(m.liquidityNum || m.liquidityClob || m.liquidity || 0)),
+        clobTokenIds,
+        negRisk: Boolean(m.negRisk),
+      });
     }
 
     return NextResponse.json({

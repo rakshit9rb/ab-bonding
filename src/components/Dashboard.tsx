@@ -51,7 +51,7 @@ function FilterLink({
         padding: 0,
         color: active ? "var(--text)" : "var(--text-tertiary)",
         fontWeight: active ? 600 : 400,
-        textDecoration: active ? "underline" : "none",
+        textDecorationLine: active ? "underline" : "none",
         textUnderlineOffset: "4px",
         textDecorationThickness: "2px",
       }}
@@ -658,7 +658,7 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
                 padding: 0,
                 color: showDisputes ? "var(--text)" : "var(--text-tertiary)",
                 fontWeight: showDisputes ? 600 : 400,
-                textDecoration: showDisputes ? "underline" : "none",
+                textDecorationLine: showDisputes ? "underline" : "none",
                 textUnderlineOffset: "4px",
                 textDecorationThickness: "2px",
               }}

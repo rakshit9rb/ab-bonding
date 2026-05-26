@@ -46,11 +46,5 @@
       "oxfmt --write"
     ],
     "*.{json,jsonc,css,md,mdx}": "oxfmt --write"
-  },
-  "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "onFail": "error"
-    }
   }
 }

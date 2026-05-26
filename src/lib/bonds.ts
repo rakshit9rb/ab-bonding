@@ -19,8 +19,13 @@ export type SortKey = "gain" | "apy" | "prob" | "expiry" | "volume" | "liquidity
 export type TimeLeft = "any" | "1h" | "6h" | "12h" | "24h" | "7d";
 
 const GAMMA = "https://gamma-api.polymarket.com";
+const CLOB = "https://clob.polymarket.com";
 const MARKET_PAGE_LIMIT = 200;
 const MARKET_PAGE_COUNT = 4;
+// USDC depth on the ask side within this slippage tolerance of the displayed price
+// is what we report as "liquidity" — i.e. real near-the-money buyable size.
+const LIQUIDITY_PRICE_TOLERANCE = 0.02;
+const BOOKS_BATCH_SIZE = 50;
 const MARKET_QUERIES = [
   { order: "volume_num", ascending: false },
   { order: "liquidity_num", ascending: false },
@@ -56,7 +61,18 @@ function parseEndDate(m: Record<string, unknown>): string | null {
   return (m.endDate || m.endDateIso || null) as string | null;
 }
 
+// Polymarket uses far-future dates (2030+, e.g. 2030-12-31, 2100-…) as placeholders
+// when a market has no fixed resolution date. Treat these as "no real maturity" so we
+// don't compute meaningless APYs against a 5-year span.
+export function isPlaceholderEndDate(endDateStr: string): boolean {
+  if (!endDateStr) return false;
+  const d = new Date(endDateStr);
+  if (isNaN(d.getTime())) return false;
+  return d.getUTCFullYear() >= 2030;
+}
+
 export function calcAPY(price: number, endDateStr: string): number | null {
+  if (isPlaceholderEndDate(endDateStr)) return null;
   try {
     const end = new Date(endDateStr);
     const now = new Date();
@@ -105,21 +121,23 @@ const CATEGORY_RULES: [string, RegExp][] = [
 ];
 
 function getCategory(m: Record<string, unknown>): string {
-  // Prefer explicit API category/tags if meaningful
-  const apiCat = (() => {
-    if (m.category) return String(m.category).trim();
-    const tags = m.tags as Array<string | { label?: string }> | undefined;
-    if (tags && tags.length > 0) {
-      const t = tags[0];
-      return typeof t === "object" ? (t.label ?? "") : String(t);
-    }
-    return "";
-  })();
-  if (apiCat && apiCat.toLowerCase() !== "other" && apiCat.toLowerCase() !== "unknown") {
-    return apiCat;
+  // Prefer explicit API category/tags when they're meaningful. Gamma's /markets and
+  // /markets/keyset don't currently return these, but other endpoints (and future API
+  // versions) might — respect them when present rather than silently overriding.
+  if (m.category) {
+    const c = String(m.category).trim();
+    const lc = c.toLowerCase();
+    if (c && lc !== "other" && lc !== "unknown") return c;
+  }
+  const tags = m.tags as Array<string | { label?: string }> | undefined;
+  if (Array.isArray(tags) && tags.length > 0) {
+    const t = tags[0];
+    const label = (typeof t === "object" ? (t.label ?? "") : String(t)).trim();
+    const lc = label.toLowerCase();
+    if (label && lc !== "other" && lc !== "unknown") return label;
   }
 
-  // Infer from question text
+  // Fall back to keyword inference from the question text.
   const text = String(m.question || m.title || "");
   for (const [cat, regex] of CATEGORY_RULES) {
     if (regex.test(text)) return cat;
@@ -147,8 +165,90 @@ function getLiquidity(m: Record<string, unknown>): number {
   return 0;
 }
 
+interface BookEntry {
+  price: string;
+  size: string;
+}
+interface Book {
+  asset_id: string;
+  bids: BookEntry[];
+  asks: BookEntry[];
+}
+
+// Sum USDC notional of asks priced at or below (displayedPrice + tolerance) — i.e. how much
+// it would cost to walk the ask side from the cheapest level up to the tolerance ceiling.
+// This is the real "how much can I buy near the current odds" number.
+function askDepthUsdc(asks: BookEntry[] | undefined, displayedPrice: number): number {
+  if (!asks?.length) return 0;
+  const ceiling = displayedPrice + LIQUIDITY_PRICE_TOLERANCE;
+  let usdc = 0;
+  for (const a of asks) {
+    const p = parseFloat(a.price);
+    const s = parseFloat(a.size);
+    if (!isFinite(p) || !isFinite(s)) continue;
+    if (p <= ceiling) usdc += p * s;
+  }
+  return usdc;
+}
+
+async function fetchBooks(tokenIds: string[]): Promise<Map<string, Book>> {
+  const out = new Map<string, Book>();
+  if (tokenIds.length === 0) return out;
+
+  const chunks: string[][] = [];
+  for (let i = 0; i < tokenIds.length; i += BOOKS_BATCH_SIZE) {
+    chunks.push(tokenIds.slice(i, i + BOOKS_BATCH_SIZE));
+  }
+
+  await Promise.all(
+    chunks.map(async (chunk) => {
+      try {
+        const res = await fetch(`${CLOB}/books`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "User-Agent": "OnlyBonds/1.0",
+          },
+          body: JSON.stringify(chunk.map((token_id) => ({ token_id }))),
+          next: { revalidate: 60 },
+        });
+        if (!res.ok) return;
+        const books = (await res.json()) as Book[];
+        for (const b of books) {
+          if (b?.asset_id) out.set(b.asset_id, b);
+        }
+      } catch {}
+    }),
+  );
+
+  return out;
+}
+
+// Gamma exposes `parentEventId` on sub-events (e.g. "...-more-markets" sports events).
+// We fetch each unique parent once and use its volume so sub-markets reflect fixture-level activity
+// rather than the (usually tiny) individual binary line volume.
+async function fetchParentEventVolumes(parentIds: Set<string>): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  await Promise.all(
+    Array.from(parentIds).map(async (id) => {
+      try {
+        const res = await fetch(`${GAMMA}/events/${encodeURIComponent(id)}`, {
+          headers: { "User-Agent": "OnlyBonds/1.0" },
+          next: { revalidate: 60 },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const v = parseFloat(String(data.volume ?? data.volumeNum ?? 0));
+        if (!isNaN(v) && v > 0) out.set(id, v);
+      } catch {}
+    }),
+  );
+  return out;
+}
+
 // Server-side only — called from API route
 export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
+  const now = new Date();
   const seen = new Set<string>();
   let raw: Record<string, unknown>[] = [];
 
@@ -186,7 +286,6 @@ export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
     return markets;
   };
 
-  const now = new Date();
   const results = await Promise.allSettled(MARKET_QUERIES.map(fetchMarketPages));
 
   for (const result of results) {
@@ -213,11 +312,20 @@ export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
     } catch {}
   }
 
-  const bonds: Bond[] = [];
+  // Survivors of the price/date filters — gather unique parent event IDs and the buy-side
+  // token IDs in one pass so we can batch the lookups instead of fetching per-row.
+  type Survivor = {
+    m: Record<string, unknown>;
+    yesPrice: number;
+    endDate: string;
+    clobTokenIds: [string, string] | null;
+  };
+  const surviving: Survivor[] = [];
+  const parentEventIds = new Set<string>();
+  const buyTokenIds = new Set<string>();
 
   for (const m of raw) {
     if (m.closed === true || m.archived === true || m.active === false) continue;
-
     const yesPrice = parsePrice(m);
     if (yesPrice == null) continue;
     const { outcome, price } = getBondSide(yesPrice);
@@ -235,24 +343,52 @@ export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
       else if (ids[0]) clobTokenIds = [ids[0], ids[0]];
     } catch {}
 
-    const conditionId = String(m.conditionId || m.id || Math.random());
+    surviving.push({ m, yesPrice, endDate, clobTokenIds });
+
+    const ev = Array.isArray(m.events) && m.events.length > 0 ? (m.events as any[])[0] : null;
+    if (ev?.parentEventId) parentEventIds.add(String(ev.parentEventId));
+
+    // The token whose asks we'd hit to buy this bond's side
+    const buyToken = clobTokenIds ? clobTokenIds[outcome === "YES" ? 0 : 1] : null;
+    if (buyToken) buyTokenIds.add(buyToken);
+  }
+
+  const [parentVolumes, books] = await Promise.all([
+    fetchParentEventVolumes(parentEventIds),
+    fetchBooks(Array.from(buyTokenIds)),
+  ]);
+
+  const bonds: Bond[] = [];
+
+  for (const { m, yesPrice, endDate, clobTokenIds } of surviving) {
+    const { outcome, price } = getBondSide(yesPrice);
+    const conditionId = String(m.conditionId || m.id || "");
+    if (!conditionId) continue;
+
+    const ev = Array.isArray(m.events) && m.events.length > 0 ? (m.events as any[])[0] : null;
+    // Sub-event sub-markets (Spreads/Totals/BTTS) get the parent moneyline event's volume.
+    // Top-level binary markets keep their own market-level volume.
+    const parentId = ev?.parentEventId ? String(ev.parentEventId) : null;
+    const volume = parentId ? (parentVolumes.get(parentId) ?? getVolume(m)) : getVolume(m);
+
+    // Real liquidity = USDC depth on the ask side within tolerance of the displayed price.
+    // Fall back to Gamma's coarse `liquidityNum` if the book lookup failed.
+    const buyToken = clobTokenIds ? clobTokenIds[outcome === "YES" ? 0 : 1] : null;
+    const book = buyToken ? books.get(buyToken) : null;
+    const liquidity = book ? askDepthUsdc(book.asks, price) : getLiquidity(m);
+
     bonds.push({
       id: conditionId,
       conditionId,
       question: String(m.question || m.title || "Unknown"),
-      slug: String(
-        (Array.isArray(m.events) && m.events.length > 0 ? (m.events as any[])[0]?.slug : null) ||
-          m.slug ||
-          m.conditionId ||
-          "",
-      ),
+      slug: String(ev?.slug || m.slug || m.conditionId || ""),
       category: getCategory(m),
       outcome,
       price,
       apy: calcAPY(price, endDate),
       endDate,
-      volume: getVolume(m),
-      liquidity: getLiquidity(m),
+      volume,
+      liquidity,
       clobTokenIds,
       negRisk: Boolean(m.negRisk),
     });
@@ -360,8 +496,7 @@ export function fmtExpiry(endDateStr: string): {
   if (!endDateStr) return { label: "—", urgency: "normal" };
   const end = new Date(endDateStr);
   if (isNaN(end.getTime())) return { label: "—", urgency: "normal" };
-  // Polymarket uses 2026-12-31 as a placeholder for "no fixed end date"
-  if (endDateStr.startsWith("2026-12-31")) return { label: "—", urgency: "normal" };
+  if (isPlaceholderEndDate(endDateStr)) return { label: "—", urgency: "normal" };
   const now = new Date();
   const hours = (end.getTime() - now.getTime()) / 3600000;
   const days = Math.floor(hours / 24);
