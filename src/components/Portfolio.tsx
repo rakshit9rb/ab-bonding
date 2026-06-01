@@ -1,9 +1,11 @@
 "use client";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { Fragment, useState, useEffect, useCallback, useMemo } from "react";
 import type { ConnectedWallet } from "@privy-io/react-auth";
 import { usePrivy, useSendTransaction, useWallets } from "@privy-io/react-auth";
 import { getUsdcBalance, transferUsdcSponsored } from "@/lib/polymarket";
 import { ensureWalletOnPolygon, getPrimaryWallet } from "@/lib/privyWallet";
+import { Bond, calcAPY } from "@/lib/bonds";
+import TradePanel from "./TradePanel";
 import {
   DepositWalletInfo,
   fetchDepositWalletInfo,
@@ -17,6 +19,9 @@ interface Position {
   conditionId: string;
   title: string;
   outcome: string;
+  outcomeIndex: number;
+  oppositeAsset: string;
+  negativeRisk: boolean;
   slug: string;
   eventSlug: string;
   size: number;
@@ -71,6 +76,32 @@ function PnlBadge({ value, pct }: { value: number; pct?: number }) {
       {pct != null ? ` (${fmtPct(pct)})` : ""}
     </span>
   );
+}
+
+// Map a Polymarket position onto the Bond shape TradePanel consumes. The positions
+// API already carries both token IDs (asset + oppositeAsset), neg-risk, and the held
+// outcome's current price, so no extra market lookup is needed. clobTokenIds must be
+// [yesTokenId, noTokenId]; outcomeIndex tells us which index the held `asset` is.
+function positionToBond(p: Position): Bond {
+  const yesToken = p.outcomeIndex === 0 ? p.asset : p.oppositeAsset;
+  const noToken = p.outcomeIndex === 0 ? p.oppositeAsset : p.asset;
+  const clobTokenIds: [string, string] | null =
+    yesToken && noToken ? [yesToken, noToken] : p.asset ? [p.asset, p.asset] : null;
+  return {
+    id: p.conditionId,
+    conditionId: p.conditionId,
+    question: p.title,
+    slug: p.eventSlug || p.slug,
+    category: "",
+    outcome: p.outcomeIndex === 0 ? "YES" : "NO",
+    price: p.curPrice,
+    apy: calcAPY(p.curPrice, p.endDate),
+    endDate: p.endDate,
+    volume: 0,
+    liquidity: 0,
+    clobTokenIds,
+    negRisk: p.negativeRisk,
+  };
 }
 
 // ─── Funds Panel ─────────────────────────────────────────────────────────────
@@ -345,6 +376,8 @@ function SummaryBar({ positions }: { positions: Position[] }) {
 // ─── Positions Table ──────────────────────────────────────────────────────────
 
 function PositionsTable({ positions }: { positions: Position[] }) {
+  const [openAsset, setOpenAsset] = useState<string | null>(null);
+
   if (positions.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-40 gap-2">
@@ -377,79 +410,128 @@ function PositionsTable({ positions }: { positions: Position[] }) {
           </tr>
         </thead>
         <tbody>
-          {positions.map((p) => (
-            <tr
-              key={p.asset}
-              style={{
-                borderBottom: "1px solid #1f2937",
-                opacity: p.redeemable ? 0.6 : 1,
-              }}
-            >
-              <td className="py-3 pr-4">
-                <a
-                  href={`https://polymarket.com/event/${p.eventSlug}?via=onlybonds`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[13px] font-medium hover:underline"
-                  style={{ color: "var(--text)", textDecoration: "none" }}
-                >
-                  <span className="line-clamp-2 max-w-[280px] block">{p.title}</span>
-                </a>
-                {p.redeemable && (
-                  <span className="text-[11px] mt-0.5 block" style={{ color: "#fbbf24" }}>
-                    Redeemable
-                  </span>
-                )}
-              </td>
-              <td className="py-3 px-3 text-right">
-                <span
-                  className="px-2 py-0.5 rounded text-[11px] font-semibold"
+          {positions.map((p) => {
+            const tradeable = !p.redeemable && !!p.asset;
+            const open = openAsset === p.asset;
+            return (
+              <Fragment key={p.asset}>
+                <tr
+                  onClick={tradeable ? () => setOpenAsset(open ? null : p.asset) : undefined}
+                  className={
+                    tradeable
+                      ? "cursor-pointer transition-colors hover:bg-[rgba(255,255,255,0.025)]"
+                      : undefined
+                  }
                   style={{
-                    background:
-                      p.outcome.toLowerCase() === "yes" || p.curPrice > 0.5
-                        ? "rgba(5,150,80,0.15)"
-                        : "rgba(220,38,38,0.1)",
-                    color:
-                      p.outcome.toLowerCase() === "yes" || p.curPrice > 0.5 ? "#4ade80" : "#f87171",
+                    borderBottom: open ? "none" : "1px solid #1f2937",
+                    opacity: p.redeemable ? 0.6 : 1,
                   }}
                 >
-                  {p.outcome}
-                </span>
-              </td>
-              <td
-                className="py-3 px-3 text-right font-mono"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                {p.size.toFixed(2)}
-              </td>
-              <td
-                className="py-3 px-3 text-right font-mono"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                {p.avgPrice > 0 ? (p.avgPrice * 100).toFixed(1) + "¢" : "—"}
-              </td>
-              <td className="py-3 px-3 text-right font-mono" style={{ color: "var(--text)" }}>
-                {(p.curPrice * 100).toFixed(1)}¢
-              </td>
-              <td className="py-3 px-3 text-right font-mono" style={{ color: "var(--text)" }}>
-                {fmt$(p.currentValue)}
-              </td>
-              <td className="py-3 px-3 text-right">
-                <PnlBadge value={p.cashPnl} pct={p.percentPnl} />
-              </td>
-              <td
-                className="py-3 pl-3 text-right font-mono text-[12px]"
-                style={{ color: "#6b7280" }}
-              >
-                {p.endDate
-                  ? new Date(p.endDate).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                    })
-                  : "—"}
-              </td>
-            </tr>
-          ))}
+                  <td className="py-3 pr-4">
+                    <div className="flex items-start gap-1.5">
+                      {tradeable && (
+                        <span
+                          className="text-[13px] leading-[1.5] shrink-0 transition-transform"
+                          style={{
+                            color: open ? "var(--accent)" : "var(--text-tertiary)",
+                            transform: open ? "rotate(90deg)" : "none",
+                          }}
+                        >
+                          ›
+                        </span>
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-start gap-1.5">
+                          <span
+                            className="line-clamp-2 max-w-[280px] text-[13px] font-medium"
+                            style={{ color: "var(--text)" }}
+                          >
+                            {p.title}
+                          </span>
+                          <a
+                            href={`https://polymarket.com/event/${p.eventSlug}?via=onlybonds`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            title="View on Polymarket"
+                            className="shrink-0 text-[12px] leading-none mt-0.5 hover:opacity-70"
+                            style={{ color: "var(--text-tertiary)", textDecoration: "none" }}
+                          >
+                            ↗
+                          </a>
+                        </div>
+                        {p.redeemable && (
+                          <span className="text-[11px] mt-0.5 block" style={{ color: "#fbbf24" }}>
+                            Redeemable
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="py-3 px-3 text-right">
+                    <span
+                      className="px-2 py-0.5 rounded text-[11px] font-semibold"
+                      style={{
+                        background:
+                          p.outcome.toLowerCase() === "yes" || p.curPrice > 0.5
+                            ? "rgba(5,150,80,0.15)"
+                            : "rgba(220,38,38,0.1)",
+                        color:
+                          p.outcome.toLowerCase() === "yes" || p.curPrice > 0.5
+                            ? "#4ade80"
+                            : "#f87171",
+                      }}
+                    >
+                      {p.outcome}
+                    </span>
+                  </td>
+                  <td
+                    className="py-3 px-3 text-right font-mono"
+                    style={{ color: "var(--text-secondary)" }}
+                  >
+                    {p.size.toFixed(2)}
+                  </td>
+                  <td
+                    className="py-3 px-3 text-right font-mono"
+                    style={{ color: "var(--text-secondary)" }}
+                  >
+                    {p.avgPrice > 0 ? (p.avgPrice * 100).toFixed(1) + "¢" : "—"}
+                  </td>
+                  <td className="py-3 px-3 text-right font-mono" style={{ color: "var(--text)" }}>
+                    {(p.curPrice * 100).toFixed(1)}¢
+                  </td>
+                  <td className="py-3 px-3 text-right font-mono" style={{ color: "var(--text)" }}>
+                    {fmt$(p.currentValue)}
+                  </td>
+                  <td className="py-3 px-3 text-right">
+                    <PnlBadge value={p.cashPnl} pct={p.percentPnl} />
+                  </td>
+                  <td
+                    className="py-3 pl-3 text-right font-mono text-[12px]"
+                    style={{ color: "#6b7280" }}
+                  >
+                    {p.endDate
+                      ? new Date(p.endDate).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                        })
+                      : "—"}
+                  </td>
+                </tr>
+                {open && tradeable && (
+                  <tr>
+                    <td colSpan={8} style={{ padding: 0 }}>
+                      <TradePanel
+                        bond={positionToBond(p)}
+                        initialDir="SELL"
+                        onClose={() => setOpenAsset(null)}
+                      />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>

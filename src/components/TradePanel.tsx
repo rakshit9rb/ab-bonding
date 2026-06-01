@@ -54,6 +54,7 @@ import { useOrderBookStream } from "@/hooks/useOrderBookStream";
 interface Props {
   bond: Bond;
   onClose: () => void;
+  initialDir?: TradeDir;
 }
 type Outcome = "YES" | "NO";
 type TradeDir = "BUY" | "SELL";
@@ -717,13 +718,13 @@ function DepositPanel({
 
 type Status = "idle" | "loading" | "success" | "error" | "approving" | "switching" | "authing";
 
-export default function TradePanel({ bond, onClose }: Props) {
+export default function TradePanel({ bond, onClose, initialDir = "BUY" }: Props) {
   const { authenticated, login, user } = usePrivy();
   const { wallets, ready: walletsReady } = useWallets();
   const { connectOrCreateWallet } = useConnectOrCreateWallet();
 
   const [outcome, setOutcome] = useState<Outcome>(bond.outcome);
-  const [tradeDir, setTradeDir] = useState<TradeDir>("BUY");
+  const [tradeDir, setTradeDir] = useState<TradeDir>(initialDir);
   const [orderType, setOrderType] = useState<OrderType>("FOK");
   const [amount, setAmount] = useState("");
   const [limitPrice, setLimitPrice] = useState("");
