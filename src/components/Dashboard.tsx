@@ -404,10 +404,13 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
   const minProbRef = useRef(minProb);
   minProbRef.current = minProb;
 
-  const load = useCallback(async (prob?: number) => {
+  const load = useCallback(async (prob?: number, opts?: { silent?: boolean }) => {
     const p = prob ?? minProbRef.current;
-    setLoading(true);
-    setError(null);
+    const silent = opts?.silent ?? false;
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const res = await fetch(`/api/markets?minProb=${p}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -420,15 +423,18 @@ export default function Dashboard({ initialBonds }: DashboardProps) {
         }),
       );
     } catch {
-      setError("Could not fetch markets.");
+      if (!silent) setError("Could not fetch markets.");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
+  // The page is statically prerendered, so `initialBonds` is a build-time snapshot.
+  // Refresh once on mount (silently when we already have the snapshot to show) and
+  // every 5 min in the background — no loading flash over existing rows.
   useEffect(() => {
-    if (!hasInitialBonds) void load();
-    const id = setInterval(load, 5 * 60 * 1000);
+    void load(undefined, { silent: hasInitialBonds });
+    const id = setInterval(() => load(undefined, { silent: true }), 5 * 60 * 1000);
     return () => clearInterval(id);
   }, [hasInitialBonds, load]);
   useEffect(() => {

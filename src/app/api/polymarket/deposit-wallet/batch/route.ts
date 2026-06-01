@@ -12,6 +12,7 @@ const PUSD = "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb";
 const CONDITIONAL_TOKENS = "0x4d97dcd97ec945f40cf65f87097ace5ea0476045";
 const CTF_EXCHANGE = "0xe111180000d2663c0091e4f400237545b87b996b";
 const NEG_RISK_CTF_EXCHANGE = "0xe2222d279d744050d28e00520010520000310f59";
+const NEG_RISK_ADAPTER = "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296";
 const APPROVE_SELECTOR = "0x095ea7b3";
 const SET_APPROVAL_FOR_ALL_SELECTOR = "0xa22cb465";
 
@@ -26,7 +27,7 @@ function isAllowedApprovalCall(call: unknown) {
 
   const target = c.target.toLowerCase();
   const data = c.data.toLowerCase();
-  const exchanges = [CTF_EXCHANGE, NEG_RISK_CTF_EXCHANGE];
+  const exchanges = [CTF_EXCHANGE, NEG_RISK_CTF_EXCHANGE, NEG_RISK_ADAPTER];
 
   if (target === PUSD) {
     const expectedLength = 2 + 8 + 64 + 64;

@@ -20,16 +20,28 @@ export type TimeLeft = "any" | "1h" | "6h" | "12h" | "24h" | "7d";
 
 const GAMMA = "https://gamma-api.polymarket.com";
 const CLOB = "https://clob.polymarket.com";
-const MARKET_PAGE_LIMIT = 200;
-const MARKET_PAGE_COUNT = 4;
-// USDC depth on the ask side within this slippage tolerance of the displayed price
-// is what we report as "liquidity" — i.e. real near-the-money buyable size.
-const LIQUIDITY_PRICE_TOLERANCE = 0.02;
+// Gamma's /markets/keyset hard-caps each page at 100 rows regardless of `limit`.
+const MARKET_PAGE_SIZE = 100;
+// endDateIso-asc covers the dense short-dated band (where the 24h bonds live); vol/liq are
+// importance-sorted so a few pages already capture the high-value long-dated bonds.
+const MAX_PAGES_DATE = 10;
+const MAX_PAGES_IMPORTANCE = 3;
+// Don't page the ascending date walk past this horizon, and tell Gamma to skip far-future
+// placeholder end dates (year >= 2030). Comfortably covers every UI time filter (max "month" = 31d).
+const HORIZON_DAYS = 90;
+// Wall-clock safety cap on the (parallel) keyset walks so a slow Gamma can't hang a request.
+const FETCH_BUDGET_MS = 9000;
+// Cap concurrent parent-event lookups so deep pagination can't fan out unbounded.
+const PARENT_FETCH_CONCURRENCY = 15;
+// Liquidity = total USDC notional buyable on the ask side, summed from the best ask up to
+// this ceiling (the deepest tradeable level below $1). Asks at/above ~$1 carry no yield, so
+// they're excluded.
+const MAX_BUY_PRICE = 0.9999;
 const BOOKS_BATCH_SIZE = 50;
 const MARKET_QUERIES = [
-  { order: "volume_num", ascending: false },
-  { order: "liquidity_num", ascending: false },
-  { order: "endDateIso", ascending: true },
+  { order: "volume_num", ascending: false, maxPages: MAX_PAGES_IMPORTANCE },
+  { order: "liquidity_num", ascending: false, maxPages: MAX_PAGES_IMPORTANCE },
+  { order: "endDateIso", ascending: true, maxPages: MAX_PAGES_DATE },
 ] as const;
 
 function parsePrice(m: Record<string, unknown>): number | null {
@@ -159,16 +171,6 @@ function getVolume(m: Record<string, unknown>): number {
   return 0;
 }
 
-function getLiquidity(m: Record<string, unknown>): number {
-  for (const key of ["liquidityNum", "liquidityClob", "liquidity"]) {
-    if (m[key] != null) {
-      const v = parseFloat(m[key] as string);
-      if (!isNaN(v)) return v;
-    }
-  }
-  return 0;
-}
-
 interface BookEntry {
   price: string;
   size: string;
@@ -179,18 +181,17 @@ interface Book {
   asks: BookEntry[];
 }
 
-// Sum USDC notional of asks priced at or below (displayedPrice + tolerance) — i.e. how much
-// it would cost to walk the ask side from the cheapest level up to the tolerance ceiling.
-// This is the real "how much can I buy near the current odds" number.
-function askDepthUsdc(asks: BookEntry[] | undefined, displayedPrice: number): number {
+// Total USDC notional (price × size) of every ask priced up to MAX_BUY_PRICE — i.e. how much
+// you could spend buying this side across the entire book, from the best ask down to the last
+// level before $1. This is the full near-resolution buyable depth, not just the top of book.
+function askDepthUsdc(asks: BookEntry[] | undefined): number {
   if (!asks?.length) return 0;
-  const ceiling = displayedPrice + LIQUIDITY_PRICE_TOLERANCE;
   let usdc = 0;
   for (const a of asks) {
     const p = parseFloat(a.price);
     const s = parseFloat(a.size);
     if (!isFinite(p) || !isFinite(s)) continue;
-    if (p <= ceiling) usdc += p * s;
+    if (p <= MAX_BUY_PRICE) usdc += p * s;
   }
   return usdc;
 }
@@ -228,47 +229,72 @@ async function fetchBooks(tokenIds: string[]): Promise<Map<string, Book>> {
   return out;
 }
 
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const out: R[] = [];
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) {
+      const idx = i++;
+      out[idx] = await fn(items[idx]);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
 // Gamma exposes `parentEventId` on sub-events (e.g. "...-more-markets" sports events).
 // We fetch each unique parent once and use its volume so sub-markets reflect fixture-level activity
-// rather than the (usually tiny) individual binary line volume.
+// rather than the (usually tiny) individual binary line volume. Concurrency-capped so deep
+// pagination can't fan out into hundreds of parallel requests.
 async function fetchParentEventVolumes(parentIds: Set<string>): Promise<Map<string, number>> {
   const out = new Map<string, number>();
-  await Promise.all(
-    Array.from(parentIds).map(async (id) => {
-      try {
-        const res = await fetch(`${GAMMA}/events/${encodeURIComponent(id)}`, {
-          headers: { "User-Agent": "OnlyBonds/1.0" },
-          next: { revalidate: 60 },
-        });
-        if (!res.ok) return;
-        const data = await res.json();
-        const v = parseFloat(String(data.volume ?? data.volumeNum ?? 0));
-        if (!isNaN(v) && v > 0) out.set(id, v);
-      } catch {}
-    }),
-  );
+  await mapWithConcurrency(Array.from(parentIds), PARENT_FETCH_CONCURRENCY, async (id) => {
+    try {
+      const res = await fetch(`${GAMMA}/events/${encodeURIComponent(id)}`, {
+        headers: { "User-Agent": "OnlyBonds/1.0" },
+        next: { revalidate: 60 },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const v = parseFloat(String(data.volume ?? data.volumeNum ?? 0));
+      if (!isNaN(v) && v > 0) out.set(id, v);
+    } catch {}
+  });
   return out;
 }
 
 // Server-side only — called from API route
 export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
   const now = new Date();
+  const horizon = new Date(now.getTime() + HORIZON_DAYS * 86400000);
+  const deadline = Date.now() + FETCH_BUDGET_MS;
   const seen = new Set<string>();
   let raw: Record<string, unknown>[] = [];
 
   const fetchMarketPages = async (query: (typeof MARKET_QUERIES)[number]) => {
     let cursor: string | undefined;
+    let prevCursor: string | undefined;
     const markets: Record<string, unknown>[] = [];
 
-    for (let page = 0; page < MARKET_PAGE_COUNT; page++) {
+    for (let page = 0; page < query.maxPages; page++) {
+      if (Date.now() > deadline) break;
       const params = new URLSearchParams({
         active: "true",
         closed: "false",
-        limit: String(MARKET_PAGE_LIMIT),
+        limit: String(MARKET_PAGE_SIZE),
         order: query.order,
         ascending: String(query.ascending),
       });
-      if (query.order === "endDateIso") params.set("end_date_min", now.toISOString().slice(0, 10));
+      if (query.order === "endDateIso") {
+        // Full timestamp (not date-only) so markets that already expired earlier today are
+        // skipped at the source — otherwise page 1 is entirely past-dated and the 24h band is empty.
+        params.set("end_date_min", now.toISOString());
+        params.set("end_date_max", horizon.toISOString());
+      }
       if (cursor) params.set("after_cursor", cursor);
 
       const res = await fetch(`${GAMMA}/markets/keyset?${params.toString()}`, {
@@ -284,7 +310,11 @@ export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
       markets.push(...pageMarkets);
 
       cursor = typeof data.next_cursor === "string" ? data.next_cursor : undefined;
-      if (!cursor || pageMarkets.length < MARKET_PAGE_LIMIT) break;
+      // Stop on: no cursor, a non-advancing cursor (some keyset APIs repeat the final cursor),
+      // or an empty page. Never compare page length to the requested limit — the API caps at 100,
+      // so `length < limit` would always be true and kill pagination after page 1.
+      if (!cursor || cursor === prevCursor || pageMarkets.length === 0) break;
+      prevCursor = cursor;
     }
 
     return markets;
@@ -375,11 +405,12 @@ export async function fetchBonds(minProb = 0.9): Promise<Bond[]> {
     const parentId = ev?.parentEventId ? String(ev.parentEventId) : null;
     const volume = parentId ? (parentVolumes.get(parentId) ?? getVolume(m)) : getVolume(m);
 
-    // Real liquidity = USDC depth on the ask side within tolerance of the displayed price.
-    // Fall back to Gamma's coarse `liquidityNum` if the book lookup failed.
+    // Liquidity = total USDC buyable on the ask side of the token we'd buy, up to 99.99¢.
+    // No book ⇒ 0 (renders "—"); we fetch a book for every buy-side token, so a miss means an
+    // empty/unavailable ladder rather than a fallback to a different (incomparable) metric.
     const buyToken = clobTokenIds ? clobTokenIds[outcome === "YES" ? 0 : 1] : null;
     const book = buyToken ? books.get(buyToken) : null;
-    const liquidity = book ? askDepthUsdc(book.asks, price) : getLiquidity(m);
+    const liquidity = book ? askDepthUsdc(book.asks) : 0;
 
     bonds.push({
       id: conditionId,

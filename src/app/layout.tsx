@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
-import { cookies } from "next/headers";
-import { THEME_COOKIE_NAME, isTheme } from "@/lib/theme";
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 import Providers from "@/components/Providers";
 
@@ -68,19 +67,15 @@ export const metadata: Metadata = {
   },
 };
 
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const cookieStore = await cookies();
-  const themeCookie = cookieStore.get(THEME_COOKIE_NAME)?.value;
-  const theme = isTheme(themeCookie) ? themeCookie : undefined;
-
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="en"
       className={`${GeistSans.variable} ${GeistMono.variable}`}
-      data-theme={theme}
       suppressHydrationWarning
     >
       <body className="font-sans">
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <Providers>{children}</Providers>
       </body>
     </html>

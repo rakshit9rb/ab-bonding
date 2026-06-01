@@ -23,6 +23,7 @@ import {
   CONDITIONAL_TOKENS_ADDRESS,
   CTF_EXCHANGE,
   NEG_RISK_CTF_EXCHANGE,
+  NEG_RISK_ADAPTER,
   calcMarketPreview,
   calcSellPreview,
   signAndPlaceOrder,
@@ -48,6 +49,7 @@ import {
   submitSignedDepositWalletBatch,
 } from "@/lib/polymarketDepositWalletClient";
 import { getOrCreateCreds, clearCreds, ApiCredentials } from "@/lib/polymarketAuth";
+import { useOrderBookStream } from "@/hooks/useOrderBookStream";
 
 interface Props {
   bond: Bond;
@@ -203,27 +205,43 @@ const APPROVAL_ABI = [
   },
 ] as const;
 
-function buildDepositWalletApprovalCall(tradeDir: TradeDir, exchange: string): DepositWalletCall {
-  if (tradeDir === "BUY") {
-    return {
-      target: COLLATERAL_TOKEN_ADDRESS,
-      value: "0",
-      data: encodeFunctionData({
-        abi: APPROVAL_ABI,
-        functionName: "approve",
-        args: [exchange as `0x${string}`, maxUint256],
-      }),
-    };
-  }
+// Every Polymarket operator that may need to move the deposit wallet's funds.
+// Neg-risk markets settle through the NegRiskAdapter, so it must be approved
+// alongside the two exchanges.
+const APPROVAL_SPENDERS = [CTF_EXCHANGE, NEG_RISK_CTF_EXCHANGE, NEG_RISK_ADAPTER] as const;
+
+function buildPusdApprovalCall(spender: string): DepositWalletCall {
+  return {
+    target: COLLATERAL_TOKEN_ADDRESS,
+    value: "0",
+    data: encodeFunctionData({
+      abi: APPROVAL_ABI,
+      functionName: "approve",
+      args: [spender as `0x${string}`, maxUint256],
+    }),
+  };
+}
+
+function buildCtfApprovalCall(spender: string): DepositWalletCall {
   return {
     target: CONDITIONAL_TOKENS_ADDRESS,
     value: "0",
     data: encodeFunctionData({
       abi: APPROVAL_ABI,
       functionName: "setApprovalForAll",
-      args: [exchange as `0x${string}`, true],
+      args: [spender as `0x${string}`, true],
     }),
   };
+}
+
+// Grant every approval (collateral spend + outcome-token transfer for each
+// operator) in one signed batch so a user only approves once, ever — covering
+// every market type and both trade directions.
+function buildAllApprovalCalls(): DepositWalletCall[] {
+  return APPROVAL_SPENDERS.flatMap((spender) => [
+    buildPusdApprovalCall(spender),
+    buildCtfApprovalCall(spender),
+  ]);
 }
 
 async function signDepositWalletBatch({
@@ -709,7 +727,6 @@ export default function TradePanel({ bond, onClose }: Props) {
   const [orderType, setOrderType] = useState<OrderType>("FOK");
   const [amount, setAmount] = useState("");
   const [limitPrice, setLimitPrice] = useState("");
-  const [book, setBook] = useState<OrderBook | null>(null);
   const [preview, setPreview] = useState<OrderPreview | null>(null);
   const [usdcBalance, setUsdcBalance] = useState<number | null>(null);
   const [tradingUsdcBalance, setTradingUsdcBalance] = useState<number | null>(null);
@@ -732,6 +749,9 @@ export default function TradePanel({ bond, onClose }: Props) {
   const yesTokenId = bond.clobTokenIds?.[0];
   const tokenId = outcome === "YES" ? yesTokenId : bond.clobTokenIds?.[1];
   const exchange = bond.negRisk ? NEG_RISK_CTF_EXCHANGE : CTF_EXCHANGE;
+
+  // Live order book over the Polymarket market WS (replaces the old 2s REST poll).
+  const { book, status: bookStatus } = useOrderBookStream(tokenId);
 
   // Derived best prices — from the currently-fetched token's book
   const asks = book?.asks ?? [];
@@ -810,34 +830,37 @@ export default function TradePanel({ bond, onClose }: Props) {
     }
     const currentDepositWallet =
       depositWallet ?? (await ensureDepositWalletInfo().catch(() => null));
+    const depositAddr = currentDepositWallet?.address;
+    // Spenders this market actually needs approved before an order can match.
+    const requiredSpenders = bond.negRisk ? [exchange, NEG_RISK_ADAPTER] : [exchange];
     const [
       balance,
       tradingBalance,
       usdce,
       nextUsdceAllowance,
-      nextCollateralAllowance,
-      nextCtfApproval,
+      spenderAllowances,
+      spenderApprovals,
     ] = await Promise.all([
       getUsdcBalance(wallet.address),
-      currentDepositWallet?.address
-        ? getUsdcBalance(currentDepositWallet.address)
-        : Promise.resolve(null),
+      depositAddr ? getUsdcBalance(depositAddr) : Promise.resolve(null),
       getUsdceBalance(wallet.address),
       getUsdceAllowance(wallet.address, COLLATERAL_ONRAMP_ADDRESS),
-      currentDepositWallet?.address
-        ? getUsdcAllowance(currentDepositWallet.address, exchange)
-        : Promise.resolve(0),
-      currentDepositWallet?.address
-        ? getCtfApproval(currentDepositWallet.address, exchange)
-        : Promise.resolve(false),
+      depositAddr
+        ? Promise.all(requiredSpenders.map((s) => getUsdcAllowance(depositAddr, s)))
+        : Promise.resolve<number[]>([]),
+      depositAddr
+        ? Promise.all(requiredSpenders.map((s) => getCtfApproval(depositAddr, s)))
+        : Promise.resolve<boolean[]>([]),
     ]);
     setUsdcBalance(balance);
     setTradingUsdcBalance(tradingBalance);
     setUsdceBalance(usdce);
     setUsdceAllowance(nextUsdceAllowance);
-    setCollateralAllowance(nextCollateralAllowance);
-    setCtfApproval(nextCtfApproval);
-  }, [wallet?.address, exchange, depositWallet, ensureDepositWalletInfo]);
+    // Order matches only when EVERY required spender is approved, so gate on the
+    // weakest one: the minimum allowance and all-approved across spenders.
+    setCollateralAllowance(spenderAllowances.length ? Math.min(...spenderAllowances) : 0);
+    setCtfApproval(spenderApprovals.length ? spenderApprovals.every(Boolean) : false);
+  }, [wallet?.address, exchange, bond.negRisk, depositWallet, ensureDepositWalletInfo]);
 
   useEffect(() => {
     posthog?.capture(
@@ -853,41 +876,6 @@ export default function TradePanel({ bond, onClose }: Props) {
     if (!authenticated || !user?.id) return;
     posthog?.identify(user.id, { wallet_address: wallet?.address ?? null });
   }, [authenticated, user?.id, wallet?.address, posthog]);
-
-  // Order book polling every 2s — re-fetch when outcome changes (YES vs NO token)
-  useEffect(() => {
-    console.log(
-      "[TradePanel] tokenId changed:",
-      outcome,
-      tokenId,
-      "clobTokenIds:",
-      bond.clobTokenIds,
-    );
-    if (!tokenId) return;
-    setBook(null);
-    const load = async () => {
-      try {
-        const [bookRes, feeRes] = await Promise.all([
-          fetch(`${CLOB_URL}/book?token_id=${tokenId}`),
-          fetch(`${CLOB_URL}/fee-rate?token_id=${tokenId}`),
-        ]);
-        if (!bookRes.ok) return;
-        const nextBook = await bookRes.json();
-        const fee = feeRes.ok ? await feeRes.json() : null;
-        const baseFee =
-          typeof fee?.base_fee === "number"
-            ? fee.base_fee
-            : Number.parseFloat(String(fee?.base_fee ?? "0"));
-        setBook({
-          ...nextBook,
-          base_fee: Number.isFinite(baseFee) ? baseFee : 0,
-        });
-      } catch {}
-    };
-    load();
-    const id = setInterval(load, 2000);
-    return () => clearInterval(id);
-  }, [tokenId]);
 
   // Chain + balance + allowance when wallet connects
   useEffect(() => {
@@ -1032,11 +1020,7 @@ export default function TradePanel({ bond, onClose }: Props) {
     posthog?.capture("usdc_approval_started", metricProps());
     captureServer("usdc_approval_started", metricProps());
     setStatus("approving");
-    setStatusMsg(
-      tradeDir === "BUY"
-        ? "Approving pUSD from trading wallet…"
-        : "Approving outcome tokens from trading wallet…",
-    );
+    setStatusMsg("Approving trading wallet (one-time, covers all markets)…");
     try {
       await ensureWalletOnPolygon(wallet);
       setChainId(POLYGON_CHAIN_ID);
@@ -1047,7 +1031,7 @@ export default function TradePanel({ bond, onClose }: Props) {
         await ensureDepositWalletInfo();
         throw new Error("Trading wallet deployment started. Try approval again in a moment.");
       }
-      const calls = [buildDepositWalletApprovalCall(tradeDir, exchange)];
+      const calls = buildAllApprovalCalls();
       const nonce = await fetchDepositWalletNonce(wallet.address);
       const deadline = await buildDepositWalletBatchDeadline();
       const signature = await signDepositWalletBatch({
@@ -1303,9 +1287,30 @@ export default function TradePanel({ bond, onClose }: Props) {
         <div className="p-4 border-r" style={{ borderColor: "#1f2937" }}>
           <div className="flex items-center justify-between mb-3">
             <span
-              className="text-[11px] font-semibold uppercase tracking-wider"
+              className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider"
               style={{ color: "#4b5563" }}
             >
+              <span
+                className="w-1.5 h-1.5 rounded-full inline-block transition-colors"
+                style={{
+                  background:
+                    bookStatus === "live"
+                      ? "#4ade80"
+                      : bookStatus === "idle"
+                        ? "#4b5563"
+                        : "#fbbf24",
+                  boxShadow: bookStatus === "live" ? "0 0 6px rgba(74,222,128,0.7)" : "none",
+                }}
+                title={
+                  bookStatus === "live"
+                    ? "Live — streaming order book"
+                    : bookStatus === "reconnecting"
+                      ? "Reconnecting…"
+                      : bookStatus === "connecting"
+                        ? "Connecting…"
+                        : "Idle"
+                }
+              />
               Order Book
             </span>
             <div className="flex items-center gap-3 text-[12px] font-mono">

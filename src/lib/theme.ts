@@ -11,6 +11,12 @@ export function isTheme(value: string | null | undefined): value is ThemeName {
   return value === "light" || value === "dark";
 }
 
+// Blocking inline script: applies the saved theme cookie to <html> before first
+// paint, so the layout can render statically without a theme flash. Mirrors the
+// old server-side `data-theme` (only set for an explicit light/dark cookie; absent
+// otherwise so CSS `prefers-color-scheme` handles system preference).
+export const THEME_INIT_SCRIPT = `(function(){try{var m=document.cookie.match(/(?:^|; )${THEME_COOKIE_NAME}=(light|dark)/);if(m){document.documentElement.dataset.theme=m[1];}}catch(e){}})();`;
+
 function getSystemTheme(): ThemeName {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
     return "light";

@@ -17,6 +17,9 @@ const ZERO_BYTES32 = "0x00000000000000000000000000000000000000000000000000000000
 // Contract addresses on Polygon
 export const CTF_EXCHANGE = "0xE111180000d2663C0091e4f400237545B87B996B" as const;
 export const NEG_RISK_CTF_EXCHANGE = "0xe2222d279d744050d28e00520010520000310F59" as const;
+// Neg-risk markets settle collateral through the NegRiskAdapter, which must be
+// approved by the maker in addition to the NegRiskCtfExchange.
+export const NEG_RISK_ADAPTER = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296" as const;
 export const CONDITIONAL_TOKENS_ADDRESS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045" as const;
 export const COLLATERAL_TOKEN_ADDRESS = "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB" as const; // pUSD on Polygon
 const USDCE_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174" as const;

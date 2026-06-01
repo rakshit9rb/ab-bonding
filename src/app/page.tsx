@@ -1,14 +1,9 @@
-import { fetchBonds } from "@/lib/bonds";
 import Dashboard from "@/components/Dashboard";
 
-export const revalidate = 60;
-
-export default async function Home() {
-  let initialBonds: Awaited<ReturnType<typeof fetchBonds>>;
-  try {
-    initialBonds = await fetchBonds(0.95);
-  } catch {
-    initialBonds = [];
-  }
-  return <Dashboard initialBonds={initialBonds} />;
+// The bonds fetch is multi-second (deep keyset pagination + book/parent enrichment), so we don't
+// block the SSR render on it. Render the shell immediately; the Dashboard fetches client-side
+// through the stale-while-revalidate /api/markets route and shows the existing skeleton while
+// loading. This removes the blocking SSR render and the 60s cache-expiry stall.
+export default function Home() {
+  return <Dashboard />;
 }
