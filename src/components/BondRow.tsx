@@ -74,7 +74,7 @@ export default memo(function BondRow({ bond, index, pinned }: Props) {
           </button>
 
           {/* Mobile stats */}
-          <div className="flex items-center gap-4 md:hidden pl-7">
+          <div className="flex items-center gap-4 md:hidden">
             <span className="text-[14px] font-bold tabular-nums" style={{ color: "var(--green)" }}>
               {bond.outcome} {probPct}%
             </span>
