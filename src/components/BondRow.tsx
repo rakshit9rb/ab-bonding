@@ -53,11 +53,9 @@ export default memo(function BondRow({ bond, index, pinned }: Props) {
           </a>
 
           {/* Name */}
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="md:pr-8 min-w-0 flex items-center gap-2 mb-2 md:mb-0 no-underline"
+          <button
+            onClick={() => setOpen((v) => !v)}
+            className="md:pr-8 min-w-0 flex items-center gap-2 mb-2 md:mb-0 bg-transparent border-none p-0 text-left cursor-pointer"
           >
             <span
               className="md:hidden inline-block text-[14px] leading-none shrink-0"
@@ -69,7 +67,7 @@ export default memo(function BondRow({ bond, index, pinned }: Props) {
               {"\u2192"}
             </span>
             <div
-              className="text-[15px] font-medium truncate leading-snug"
+              className="text-[15px] font-medium truncate leading-snug hover:opacity-70 transition-opacity"
               style={{ color: "var(--text)" }}
             >
               {bond.question}
@@ -82,7 +80,7 @@ export default memo(function BondRow({ bond, index, pinned }: Props) {
                 * featured
               </span>
             )}
-          </a>
+          </button>
 
           {/* Mobile stats */}
           <div className="flex items-center gap-4 md:hidden pl-7">
@@ -97,10 +95,10 @@ export default memo(function BondRow({ bond, index, pinned }: Props) {
             </span>
             <button
               onClick={() => setOpen((v) => !v)}
-              className="ml-auto text-[12px] font-medium cursor-pointer transition-opacity hover:opacity-70 bg-transparent border-none p-0"
+              className="ml-auto cursor-pointer transition-opacity hover:opacity-70 bg-transparent border-none p-0"
               style={{ color: open ? "var(--text-secondary)" : "#60a5fa" }}
             >
-              {open ? "Close" : "Trade"}
+              {open ? "✕" : "↗"}
             </button>
           </div>
 
@@ -134,14 +132,14 @@ export default memo(function BondRow({ bond, index, pinned }: Props) {
             </span>
           </div>
 
-          {/* Buy button — always visible */}
+          {/* Arrow button — always visible */}
           <div className="hidden md:flex items-center justify-end">
             <button
               onClick={() => setOpen((v) => !v)}
-              className="text-[13px] font-medium cursor-pointer transition-opacity hover:opacity-70 bg-transparent border-none p-0 appearance-none outline-none"
+              className="text-[16px] cursor-pointer transition-opacity hover:opacity-70 bg-transparent border-none p-0 appearance-none outline-none"
               style={{ color: open ? "var(--text-secondary)" : "#60a5fa" }}
             >
-              {open ? "Close" : "Trade"}
+              {open ? "✕" : "↗"}
             </button>
           </div>
         </div>
