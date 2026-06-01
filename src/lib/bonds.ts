@@ -92,7 +92,11 @@ const CATEGORY_RULES: [string, RegExp][] = [
   ],
   [
     "Politics",
-    /\b(election|president|congress|senate|democrat|republican|trump|biden|harris|vote|ballot|governor|parliament|prime minister|chancellor|cabinet|white house|supreme court|impeach|campaign|poll|gop|labour|tory|macron|modi|xi jinping|zelensky|putin|war|invasion|nato|ukraine|russia|china|taiwan|conflict|military|sanction|ceasefire|troops|missile|nuclear|treaty|diplomacy|middle east|israel|gaza|iran|north korea)\b/i,
+    /\b(election|president|congress|senate|democrat|republican|trump|biden|harris|vote|ballot|governor|parliament|prime minister|chancellor|cabinet|white house|supreme court|impeach|campaign|poll|gop|labour|tory|macron|modi|xi jinping|zelensky|putin|war|invasion|nato|ukraine|russia|china|taiwan|conflict|military|sanction|ceasefire|troops|missile|nuclear|treaty|diplomacy|middle east|israel|gaza|iran|north korea|hormuz|strait|airspace|regime|coup|geopolit)\b/i,
+  ],
+  [
+    "Esports",
+    /\b(lol|league of legends|lpl|lck|lec|lcs|valorant|cs2|csgo|cs:go|dota|rocket league|esport|overwatch|starcraft|mobile legends|pubg|fortnite|apex legends)\b/i,
   ],
   [
     "Finance",

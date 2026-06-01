@@ -57,15 +57,6 @@ export default memo(function BondRow({ bond, index, pinned }: Props) {
             onClick={() => setOpen((v) => !v)}
             className="md:pr-8 min-w-0 flex items-center gap-2 mb-2 md:mb-0 bg-transparent border-none p-0 text-left cursor-pointer"
           >
-            <span
-              className="md:hidden inline-block text-[14px] leading-none shrink-0"
-              style={{
-                color: "var(--text-tertiary)",
-                transform: "rotate(-45deg)",
-              }}
-            >
-              {"\u2192"}
-            </span>
             <div
               className="text-[15px] font-medium truncate leading-snug hover:opacity-70 transition-opacity"
               style={{ color: "var(--text)" }}
