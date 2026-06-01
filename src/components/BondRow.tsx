@@ -32,25 +32,8 @@ export default memo(function BondRow({ bond, index, pinned }: Props) {
             gridTemplateColumns: "24px 1fr 110px 100px 120px 90px 90px 72px",
           }}
         >
-          {/* Arrow */}
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hidden md:block no-underline"
-            tabIndex={-1}
-          >
-            <span
-              className="text-[16px] leading-none"
-              style={{
-                color: "var(--text-tertiary)",
-                transform: "rotate(-45deg)",
-                display: "inline-block",
-              }}
-            >
-              {"\u2192"}
-            </span>
-          </a>
+          {/* Spacer */}
+          <div className="hidden md:block" />
 
           {/* Name */}
           <button
@@ -84,13 +67,15 @@ export default memo(function BondRow({ bond, index, pinned }: Props) {
             <span className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
               {label}
             </span>
-            <button
-              onClick={() => setOpen((v) => !v)}
-              className="ml-auto cursor-pointer transition-opacity hover:opacity-70 bg-transparent border-none p-0"
-              style={{ color: open ? "var(--text-secondary)" : "#60a5fa" }}
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-auto no-underline transition-opacity hover:opacity-70"
+              style={{ color: "#60a5fa" }}
             >
-              {open ? "✕" : "↗"}
-            </button>
+              ↗
+            </a>
           </div>
 
           {/* Desktop columns */}
@@ -123,15 +108,17 @@ export default memo(function BondRow({ bond, index, pinned }: Props) {
             </span>
           </div>
 
-          {/* Arrow button — always visible */}
+          {/* Arrow — links to Polymarket */}
           <div className="hidden md:flex items-center justify-end">
-            <button
-              onClick={() => setOpen((v) => !v)}
-              className="text-[16px] cursor-pointer transition-opacity hover:opacity-70 bg-transparent border-none p-0 appearance-none outline-none"
-              style={{ color: open ? "var(--text-secondary)" : "#60a5fa" }}
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[16px] no-underline transition-opacity hover:opacity-70"
+              style={{ color: "#60a5fa" }}
             >
-              {open ? "✕" : "↗"}
-            </button>
+              ↗
+            </a>
           </div>
         </div>
 
